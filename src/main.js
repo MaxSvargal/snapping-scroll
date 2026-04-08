@@ -1,4 +1,5 @@
 import "./style.css";
+import "./reel-item.js";
 
 const videos = [
   "-1381854028232193089.MP4",
@@ -17,53 +18,45 @@ const videos = [
 const allVideos = [...videos];
 const POOL_SIZE = 5;
 const domPool = [];
+let lastBaseIndex = -1;
 
 const playPauseObserver = new IntersectionObserver(
   (entries) => {
     entries.forEach((entry) => {
-      const video = entry.target;
-      if (entry.isIntersecting && video.getAttribute("src"))
-        video.play().catch((err) => console.error("Autoplay failed:", err));
-      else video.pause();
+      const reel = entry.target;
+      if (entry.isIntersecting) reel.playVideo();
+      else reel.pauseVideo();
     });
   },
-  { threshold: 0.6 },
+  { threshold: 0.45 },
 );
 
 function initializePool(root, itemHeight) {
   const fragment = document.createDocumentFragment();
 
   for (let i = 0; i < POOL_SIZE; i++) {
-    const section = document.createElement("section");
-    section.style.height = `${itemHeight}px`;
-
-    const video = document.createElement("video");
-    video.loop = true;
-    video.muted = true;
-    video.playsInline = true;
-
-    section.appendChild(video);
-    fragment.appendChild(section);
-
-    playPauseObserver.observe(video);
-
-    domPool.push({ section, video, currentIndex: -1 });
+    const reel = document.createElement("reel-item");
+    reel.style.height = `${itemHeight}px`;
+    playPauseObserver.observe(reel);
+    domPool.push({ element: reel, currentIndex: -1 });
+    fragment.appendChild(reel);
   }
 
   root.appendChild(fragment);
 }
 
-export function renderVirtualList() {
+export function renderVirtualList(force = false) {
   const root = document.getElementById("videos");
   const runway = document.getElementById("runway");
   const itemHeight = root.clientHeight || window.innerHeight;
   const scrollTop = root.scrollTop;
+  const currentBaseIndex = Math.floor(scrollTop / itemHeight);
 
-  const startIndex = Math.max(0, Math.floor(scrollTop / itemHeight) - 1);
-  const endIndex = Math.min(
-    allVideos.length - 1,
-    Math.floor((scrollTop + itemHeight) / itemHeight) + 2,
-  );
+  if (!force && currentBaseIndex === lastBaseIndex) return;
+  lastBaseIndex = currentBaseIndex;
+
+  const startIndex = Math.max(0, currentBaseIndex - 1);
+  const endIndex = Math.min(allVideos.length - 1, currentBaseIndex + 2);
 
   runway.style.height = `${allVideos.length * itemHeight}px`;
 
@@ -73,14 +66,14 @@ export function renderVirtualList() {
 
     if (node.currentIndex !== i) {
       node.currentIndex = i;
-      node.section.style.transform = `translateY(${i * itemHeight}px)`;
-      node.video.src = `/${allVideos[i]}`;
+      node.element.style.transform = `translateY(${i * itemHeight}px)`;
+      node.element.updateData(i, allVideos[i]);
     }
   }
 
   if (endIndex >= allVideos.length - 2) {
     allVideos.push(...videos);
-    renderVirtualList();
+    renderVirtualList(true);
   }
 }
 
@@ -96,7 +89,6 @@ export function initVideos() {
     () => {
       if (!ticking) {
         window.requestAnimationFrame(() => {
-          console.log("rerender!");
           renderVirtualList();
           ticking = false;
         });
@@ -106,7 +98,7 @@ export function initVideos() {
     { passive: true },
   );
 
-  renderVirtualList();
+  renderVirtualList(true);
 }
 
 initVideos();
