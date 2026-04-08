@@ -16,7 +16,7 @@ export class VideoStore extends EventTarget {
 
   async loadMore() {
     const newVideos = await fetchVideos();
-    this.state.videos = [...this.state.videos, ...newVideos];
+    this.state.videos.push(...newVideos);
     this.#notify();
   }
 

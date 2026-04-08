@@ -6,15 +6,15 @@ import "./components/ReelItem.js";
 
 const scroller = new VirtualScroller({
   root: document.getElementById("videos"),
-  runway: document.getElementById("runway"),
   itemTagName: "reel-item",
   onEndReached: () => store.loadMore(),
+  onElementCreated: (el) => {
+    el.onAction = (action) => store.dispatch(action);
+  },
 });
 
-scroller.domPool.forEach((el) => {
-  el.onAction = (action) => store.dispatch(action);
+store.addEventListener("statechange", (e) => {
+  scroller.update(e.detail);
 });
-
-store.addEventListener("statechange", (e) => scroller.update(e.detail));
 
 store.loadMore();
