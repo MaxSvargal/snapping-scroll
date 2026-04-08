@@ -25,9 +25,6 @@ class ReelItem extends HTMLElement {
       avatar: this.querySelector(".avatar"),
       username: this.querySelector(".username"),
       likeCount: this.querySelector(".like-count"),
-      commentBtn: this.querySelector(".comment-btn"),
-      commentsSheet: this.querySelector(".comments-sheet"),
-      closeComments: this.querySelector(".close-comments"),
     };
 
     this.#bindEvents();
@@ -35,14 +32,6 @@ class ReelItem extends HTMLElement {
 
   #bindEvents() {
     if (!this.video) return;
-
-    this.video.addEventListener("click", () => {
-      if (this.video.classList.contains("zoomed")) {
-        this.closeComments();
-      } else {
-        this.video.paused ? this.video.play() : this.video.pause();
-      }
-    });
 
     this.video.addEventListener("timeupdate", () => {
       if (this.video.duration && this.ui.progressBar) {
@@ -75,35 +64,12 @@ class ReelItem extends HTMLElement {
       const isFollowing = this.ui.followBtn.classList.toggle("following");
       this.ui.followBtn.textContent = isFollowing ? "✓" : "+";
     });
-
-    this.ui.commentBtn?.addEventListener("click", (e) => {
-      e.stopPropagation();
-      this.openComments();
-    });
-
-    this.ui.closeComments?.addEventListener("click", (e) => {
-      e.stopPropagation();
-      this.closeComments();
-    });
-  }
-
-  openComments() {
-    this.ui.commentsSheet?.classList.add("open");
-    this.video?.classList.add("zoomed");
-    this.ui.overlay?.classList.add("hidden");
-  }
-
-  closeComments() {
-    this.ui.commentsSheet?.classList.remove("open");
-    this.video?.classList.remove("zoomed");
-    this.ui.overlay?.classList.remove("hidden");
   }
 
   updateData(index, videoSrc) {
     if (!this.initialized || !this.video) return;
 
     this.video.src = `/${videoSrc}`;
-    this.closeComments();
 
     if (this.ui.avatar)
       this.ui.avatar.src = `https://i.pravatar.cc/150?u=${index + 10}`;
