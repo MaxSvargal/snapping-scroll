@@ -1,116 +1,61 @@
 export class VirtualScroller {
-  constructor({
-    root,
-    runway,
-    itemTagName,
-    poolSize = 5,
-    renderItem,
-    onEndReached,
-  }) {
+  constructor({ root, runway, itemTagName, poolSize = 5, onEndReached }) {
     this.root = root;
     this.runway = runway;
     this.itemTagName = itemTagName;
     this.poolSize = poolSize;
-    this.renderItem = renderItem;
     this.onEndReached = onEndReached;
 
-    this.domPool = [];
     this.data = [];
+    this.domPool = [];
     this.lastBaseIndex = -1;
-    this.isFetching = false;
+    this.cachedHeight = 0;
 
-    this.itemHeight = 0;
-    this.minScroll = 0;
-    this.maxScroll = 0;
-
-    this.#initResizeObserver();
-    this.#initPool();
-    this.#bindScroll();
-  }
-
-  updateData(newData) {
-    this.data = newData;
-    this.isFetching = false;
-    this.#render(true);
-  }
-
-  #initResizeObserver() {
-    let animationFrameId = null;
-
-    const observer = new ResizeObserver((entries) => {
+    new ResizeObserver((entries) => {
       const newHeight = entries[0].contentRect.height;
-      if (newHeight === 0 || newHeight === this.itemHeight) return;
+      if (newHeight === 0 || newHeight === this.cachedHeight) return;
 
-      this.itemHeight = newHeight;
+      this.cachedHeight = newHeight;
+      window.requestAnimationFrame(() => this.refresh(true));
+    }).observe(this.root);
 
-      if (animationFrameId) cancelAnimationFrame(animationFrameId);
-      animationFrameId = window.requestAnimationFrame(() => this.#render(true));
-    });
-
-    observer.observe(this.root);
-  }
-
-  #initPool() {
-    const fragment = document.createDocumentFragment();
     for (let i = 0; i < this.poolSize; i++) {
       const el = document.createElement(this.itemTagName);
-      this.domPool.push({ element: el, currentIndex: -1 });
-      fragment.appendChild(el);
+      this.domPool.push(el);
+      this.root.appendChild(el);
     }
-    this.root.appendChild(fragment);
+
+    this.root.addEventListener("scroll", () => this.refresh(), {
+      passive: true,
+    });
   }
 
-  #bindScroll() {
-    let ticking = false;
-
-    this.root.addEventListener(
-      "scroll",
-      () => {
-        const scrollTop = this.root.scrollTop;
-        if (scrollTop >= this.minScroll && scrollTop < this.maxScroll) return;
-
-        if (!ticking) {
-          window.requestAnimationFrame(() => {
-            this.#render(false, scrollTop);
-            ticking = false;
-          });
-          ticking = true;
-        }
-      },
-      { passive: true },
-    );
+  update(newData) {
+    this.data = newData;
+    // Decouple property update from layout pass
+    window.requestAnimationFrame(() => {
+      this.root.style.setProperty("--total-items", this.data.length);
+      this.refresh(true);
+    });
   }
 
-  #render(force = false, scrollTop = this.root.scrollTop) {
-    if (this.data.length === 0 || !this.itemHeight) return;
+  refresh(force = false) {
+    if (!this.cachedHeight || !this.data.length) return;
 
-    const currentBaseIndex = Math.floor(scrollTop / this.itemHeight);
+    const index = Math.round(this.root.scrollTop / this.cachedHeight);
+    if (!force && index === this.lastBaseIndex) return;
+    this.lastBaseIndex = index;
 
-    if (!force && currentBaseIndex === this.lastBaseIndex) return;
+    const start = Math.max(0, index - 1);
+    const end = Math.min(this.data.length - 1, index + 2);
 
-    this.lastBaseIndex = currentBaseIndex;
-    this.minScroll = currentBaseIndex * this.itemHeight;
-    this.maxScroll = (currentBaseIndex + 1) * this.itemHeight;
-
-    const startIndex = Math.max(0, currentBaseIndex - 1);
-    const endIndex = Math.min(this.data.length - 1, currentBaseIndex + 2);
-
-    this.runway.style.height = `${this.data.length * this.itemHeight}px`;
-
-    for (let i = startIndex; i <= endIndex; i++) {
-      const poolIndex = i % this.poolSize;
-      const node = this.domPool[poolIndex];
-
-      if (node.currentIndex !== i || force) {
-        node.currentIndex = i;
-        node.element.style.transform = `translateY(${i * this.itemHeight}px)`;
-        this.renderItem(node.element, this.data[i]);
-      }
+    for (let i = start; i <= end; i++) {
+      const el = this.domPool[i % this.poolSize];
+      el.style.setProperty("--index", i);
+      el.data = this.data[i];
+      el.active = i === index;
     }
 
-    if (endIndex >= this.data.length - 2 && !this.isFetching) {
-      this.isFetching = true;
-      this.onEndReached();
-    }
+    if (end >= this.data.length - 2) this.onEndReached?.();
   }
 }
