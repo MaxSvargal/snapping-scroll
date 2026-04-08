@@ -8,7 +8,7 @@ export class VirtualScroller {
 
     this.data = [];
     this.domPool = [];
-    this.lastBaseIndex = -1;
+    this.lastVisibleIndex = -1;
     this.cachedHeight = 0;
 
     new ResizeObserver((entries) => {
@@ -19,10 +19,24 @@ export class VirtualScroller {
       window.requestAnimationFrame(() => this.refresh(true));
     }).observe(this.root);
 
+    this.playObserver = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          entry.target.active =
+            entry.isIntersecting && entry.intersectionRatio > 0.75;
+        });
+      },
+      {
+        root: this.root,
+        threshold: 0.75,
+      },
+    );
+
     for (let i = 0; i < this.poolSize; i++) {
       const el = document.createElement(this.itemTagName);
       this.domPool.push(el);
       this.root.appendChild(el);
+      this.playObserver.observe(el);
     }
 
     this.root.addEventListener("scroll", () => this.refresh(), {
@@ -32,7 +46,6 @@ export class VirtualScroller {
 
   update(newData) {
     this.data = newData;
-    // Decouple property update from layout pass
     window.requestAnimationFrame(() => {
       this.root.style.setProperty("--total-items", this.data.length);
       this.refresh(true);
@@ -42,20 +55,44 @@ export class VirtualScroller {
   refresh(force = false) {
     if (!this.cachedHeight || !this.data.length) return;
 
-    const index = Math.round(this.root.scrollTop / this.cachedHeight);
-    if (!force && index === this.lastBaseIndex) return;
-    this.lastBaseIndex = index;
+    const visibleIndex = Math.floor(this.root.scrollTop / this.cachedHeight);
+    if (!force && visibleIndex === this.lastVisibleIndex) return;
+    this.lastVisibleIndex = visibleIndex;
 
-    const start = Math.max(0, index - 1);
-    const end = Math.min(this.data.length - 1, index + 2);
+    const start = Math.max(0, visibleIndex - Math.floor(this.poolSize / 2));
 
-    for (let i = start; i <= end; i++) {
-      const el = this.domPool[i % this.poolSize];
-      el.style.setProperty("--index", i);
-      el.data = this.data[i];
-      el.active = i === index;
+    const neededById = new Map();
+    for (let i = 0; i < this.poolSize; i++) {
+      const dataIndex = start + i;
+      if (dataIndex >= 0 && dataIndex < this.data.length) {
+        neededById.set(this.data[dataIndex].id, { dataIndex, item: this.data[dataIndex] });
+      }
     }
 
-    if (end >= this.data.length - 2) this.onEndReached?.();
+    const free = [];
+    for (const el of this.domPool) {
+      const slot = neededById.get(el.dataset.id);
+      if (slot) {
+        neededById.delete(el.dataset.id);
+        el.style.display = "";
+        el.style.setProperty("--index", slot.dataIndex);
+      } else {
+        free.push(el);
+      }
+    }
+
+    for (const slot of neededById.values()) {
+      const el = free.shift();
+      if (!el) break;
+      el.style.display = "";
+      el.style.setProperty("--index", slot.dataIndex);
+      el.data = slot.item;
+    }
+
+    for (const el of free) {
+      el.style.display = "none";
+    }
+
+    if (visibleIndex >= this.data.length - 3) this.onEndReached?.();
   }
 }
