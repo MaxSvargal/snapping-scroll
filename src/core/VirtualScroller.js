@@ -1,32 +1,25 @@
 export class VirtualScroller {
-  constructor({
-    root,
-    itemTagName,
-    onEndReached,
-    onElementCreated,
-    poolSize = 5,
-  }) {
+  constructor({ root, itemTagName, poolSize = 5, onEndReached, onElementCreated }) {
     this.root = root;
     this.itemTagName = itemTagName;
+    this.poolSize = poolSize;
     this.onEndReached = onEndReached;
     this.onElementCreated = onElementCreated;
 
     this.data = [];
-    this.pool = [];
-    this.itemHeight = 0;
-    this.lastRefreshIndex = -1;
+    this.domPool = [];
+    this.lastVisibleIndex = -1;
+    this.cachedHeight = 0;
     this.loading = false;
+    this.pending = false;
 
-    this.runway = document.createElement("div");
-    this.runway.className = "runway";
-    this.root.appendChild(this.runway);
+    new ResizeObserver((entries) => {
+      const newHeight = entries[0].contentRect.height;
+      if (newHeight === 0 || newHeight === this.cachedHeight) return;
 
-    for (let i = 0; i < poolSize; i++) {
-      const el = document.createElement(itemTagName);
-      this.onElementCreated?.(el);
-      this.root.appendChild(el);
-      this.pool.push(el);
-    }
+      this.cachedHeight = newHeight;
+      window.requestAnimationFrame(() => this.refresh(true));
+    }).observe(this.root);
 
     this.playObserver = new IntersectionObserver(
       (entries) => {
@@ -42,21 +35,30 @@ export class VirtualScroller {
       },
     );
 
-    this.pool.forEach((el) => this.playObserver.observe(el));
+    // Pre-create fixed pool of elements
+    for (let i = 0; i < this.poolSize; i++) {
+      const el = document.createElement(this.itemTagName);
+      el.style.visibility = 'hidden';
+      this.onElementCreated?.(el);
+      this.root.appendChild(el);
+      this.domPool.push(el);
+      this.playObserver.observe(el);
+    }
 
-    window.addEventListener("resize", () => {
-      const newHeight = this.root.clientHeight;
-      if (newHeight !== this.itemHeight) {
-        this.itemHeight = newHeight;
-        this.#refresh();
-      }
-    });
-
-    const onScrollEnd = () => this.#refresh();
+    // scrollend driver with fallback
+    const onScrollEnd = () => {
+      if (this.pending) return;
+      this.pending = true;
+      requestAnimationFrame(() => {
+        this.pending = false;
+        this.refresh();
+      });
+    };
 
     if ("onscrollend" in this.root) {
       this.root.addEventListener("scrollend", onScrollEnd);
     } else {
+      // Fallback for browsers without scrollend
       let scrollTimer;
       this.root.addEventListener(
         "scroll",
@@ -70,63 +72,60 @@ export class VirtualScroller {
   }
 
   update(newData) {
-    const prevLen = this.data.length;
     this.data = newData;
-
     window.requestAnimationFrame(() => {
       this.root.style.setProperty("--total-items", this.data.length);
-      this.runway.style.height = `calc(var(--total-items) * 100%)`;
-
-      if (prevLen !== newData.length) {
-        this.#refresh();
-      } else {
-        this.pool.forEach((el) => {
-          if (el._id) {
-            const dataIndex = this.data.findIndex((d) => d.id === el._id);
-            if (dataIndex !== -1) {
-              el.data = this.data[dataIndex];
-            }
-          }
-        });
-      }
+      this.refresh(true);
     });
   }
 
-  #refresh() {
-    if (!this.itemHeight || !this.data.length) return;
+  refresh(force = false) {
+    if (!this.cachedHeight) return;
 
-    const index = (this.root.scrollTop / this.itemHeight) | 0;
-    if (index === this.lastRefreshIndex) return;
-    this.lastRefreshIndex = index;
+    const visibleIndex = Math.floor(this.root.scrollTop / this.cachedHeight);
+    if (!force && visibleIndex === this.lastVisibleIndex) return;
+    this.lastVisibleIndex = visibleIndex;
 
-    const half = (this.pool.length / 2) | 0;
-    const start = Math.max(0, index - half);
+    const half = Math.floor(this.poolSize / 2);
+    const start = Math.max(0, visibleIndex - half);
 
-    this.pool.forEach((el, i) => {
+    const neededById = new Map();
+    for (let i = 0; i < this.poolSize; i++) {
       const dataIndex = start + i;
-      const data = this.data[dataIndex];
-
-      if (!data) {
-        el.style.visibility = "hidden";
-        return;
+      if (dataIndex >= 0 && dataIndex < this.data.length) {
+        const item = this.data[dataIndex];
+        neededById.set(item.id, { dataIndex, item });
       }
+    }
 
-      el.style.visibility = "";
+    const free = [];
+    for (const el of this.domPool) {
+      const itemId = el.dataset.id;
+      const slot = neededById.get(itemId);
 
-      if (el._id !== data.id) {
-        el._id = data.id;
-        el.data = data;
-        el.style.setProperty("--index", dataIndex);
+      if (slot) {
+        neededById.delete(itemId);
+        el.style.visibility = '';
+        el.style.setProperty("--index", slot.dataIndex);
+      } else {
+        free.push(el);
       }
-    });
+    }
 
-    this.pool.forEach((el, i) => {
-      const dataIndex = start + i;
-      const isNearActive = Math.abs(dataIndex - index) <= 1;
-      el.style.willChange = isNearActive ? "transform" : "auto";
-    });
+    for (const slot of neededById.values()) {
+      const el = free.shift();
+      if (!el) break;
+      el.style.visibility = '';
+      el.style.setProperty("--index", slot.dataIndex);
+      el.dataset.id = slot.item.id;
+      el.data = slot.item;
+    }
 
-    if (!this.loading && index >= this.data.length - 3) {
+    for (const el of free) {
+      el.style.visibility = 'hidden';
+    }
+
+    if (!this.loading && this.data.length > 0 && visibleIndex >= this.data.length / 2) {
       this.loading = true;
       Promise.resolve(this.onEndReached?.()).finally(() => {
         this.loading = false;

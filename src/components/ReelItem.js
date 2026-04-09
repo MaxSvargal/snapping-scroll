@@ -56,10 +56,13 @@ export class ReelItem extends HTMLElement {
   }
 
   set data(model) {
-    if (!model) return;
-
     if (!this.initialized) {
-      this.#pendingData = model;
+      if (model) this.#pendingData = model;
+      return;
+    }
+
+    if (!model) {
+      this.#pause();
       return;
     }
 
