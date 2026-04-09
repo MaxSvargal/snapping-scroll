@@ -1,14 +1,14 @@
 const DOUBLE_TAP_THRESHOLD_MS = 300;
-const PROGRESS_DELTA_THRESHOLD = 0.1;
+const PROGRESS_THRESHOLD = 0.5;
 
 export class ReelItem extends HTMLElement {
-  #rafId = null;
-  #currentProgress = 0;
-  #targetProgress = 0;
+  #rVFCId = null;
+  #lastProgress = 0;
   #isActive = false;
   #lastTap = 0;
   #pendingData = null;
   #tapTimeout = null;
+  #fallbackRafId = null;
 
   constructor() {
     super();
@@ -56,10 +56,13 @@ export class ReelItem extends HTMLElement {
   }
 
   set data(model) {
-    if (!model) return;
-
     if (!this.initialized) {
-      this.#pendingData = model;
+      if (model) this.#pendingData = model;
+      return;
+    }
+
+    if (!model) {
+      this.#pause();
       return;
     }
 
@@ -88,7 +91,6 @@ export class ReelItem extends HTMLElement {
 
   #setItemData(model) {
     this._id = model.id;
-    this.dataset.id = model.id;
     this.ui.avatar.src = model.avatar;
     this.ui.username.textContent = model.username;
     this.ui.description.textContent = model.description;
@@ -97,8 +99,13 @@ export class ReelItem extends HTMLElement {
     const newSrc = window.location.origin + `/${model.src}`;
     if (this.video.src !== newSrc) {
       this.video.pause();
-      this.video.currentTime = 0;
+      this.#stopProgressLoop();
+
+      this.video.removeAttribute("src");
+      this.video.load();
+
       this.video.src = newSrc;
+      this.#lastProgress = 0;
     }
   }
 
@@ -133,21 +140,57 @@ export class ReelItem extends HTMLElement {
 
   #startProgressLoop() {
     this.#stopProgressLoop();
-    const animate = () => {
-      const delta = (this.#targetProgress - this.#currentProgress) * 0.1;
-      if (Math.abs(delta) > PROGRESS_DELTA_THRESHOLD) {
-        this.#currentProgress += delta;
-        this.ui.progressBar.style.width = `${this.#currentProgress}%`;
-      }
-      this.#rafId = requestAnimationFrame(animate);
-    };
-    this.#rafId = requestAnimationFrame(animate);
+
+    if (
+      this.video &&
+      typeof this.video.requestVideoFrameCallback === "function"
+    ) {
+      const frame = (_now, meta) => {
+        if (!this.video.duration) {
+          this.#rVFCId = this.video.requestVideoFrameCallback(frame);
+          return;
+        }
+
+        const progress = (meta.mediaTime / this.video.duration) * 100;
+
+        if (Math.abs(progress - this.#lastProgress) > PROGRESS_THRESHOLD) {
+          this.ui.progressBar.style.width = `${progress}%`;
+          this.#lastProgress = progress;
+        }
+
+        this.#rVFCId = this.video.requestVideoFrameCallback(frame);
+      };
+      this.#rVFCId = this.video.requestVideoFrameCallback(frame);
+    } else {
+      const onTimeUpdate = () => {
+        if (!this.video.duration) return;
+
+        const progress = (this.video.currentTime / this.video.duration) * 100;
+        if (Math.abs(progress - this.#lastProgress) > PROGRESS_THRESHOLD) {
+          this.ui.progressBar.style.width = `${progress}%`;
+          this.#lastProgress = progress;
+        }
+      };
+
+      this.video?.addEventListener("timeupdate", onTimeUpdate);
+      this._timeUpdateListener = onTimeUpdate;
+    }
   }
 
   #stopProgressLoop() {
-    if (this.#rafId) {
-      cancelAnimationFrame(this.#rafId);
-      this.#rafId = null;
+    if (this.#rVFCId) {
+      this.video?.cancelVideoFrameCallback(this.#rVFCId);
+      this.#rVFCId = null;
+    }
+
+    if (this._timeUpdateListener) {
+      this.video?.removeEventListener("timeupdate", this._timeUpdateListener);
+      this._timeUpdateListener = null;
+    }
+
+    if (this.#fallbackRafId) {
+      cancelAnimationFrame(this.#fallbackRafId);
+      this.#fallbackRafId = null;
     }
   }
 
@@ -158,13 +201,6 @@ export class ReelItem extends HTMLElement {
   }
 
   #setupVideoLifecycleEvents() {
-    this.video?.addEventListener("timeupdate", () => {
-      if (this.video.duration) {
-        this.#targetProgress =
-          (this.video.currentTime / this.video.duration) * 100;
-      }
-    });
-
     this.video?.addEventListener("canplay", () => {
       if (this.#isActive) this.#play();
     });

@@ -21,8 +21,10 @@ export class VideoStore extends EventTarget {
   }
 
   dispatch(action) {
-    const video = this.state.videos.find((v) => v.id === action.id);
-    if (!video) return;
+    const i = this.state.videos.findIndex((v) => v.id === action.id);
+    if (i === -1) return;
+
+    const video = this.state.videos[i];
 
     switch (action.type) {
       case "TOGGLE_LIKE":

@@ -85,7 +85,7 @@ reel-item {
   top: 0;
   transform: translateY(calc(var(--index) * 100%));
   width: 100%;
-  will-change: transform;
+  contain: layout paint size;
 
   display: flex;
   align-items: center;
@@ -319,7 +319,6 @@ reel-item {
   border-radius: 0 2px 2px 0;
   box-shadow: 0 0 4px rgba(255, 255, 255, 0.5);
   transition: width 0.3s cubic-bezier(0.25, 1, 0.5, 1);
-  will-change: transform;
 }
 
 .floating-heart {

@@ -1,7 +1,14 @@
 export class VirtualScroller {
-  constructor({ root, itemTagName, onEndReached, onElementCreated }) {
+  constructor({
+    root,
+    itemTagName,
+    buffer = 2,
+    onEndReached,
+    onElementCreated,
+  }) {
     this.root = root;
     this.itemTagName = itemTagName;
+    this.buffer = buffer;
     this.onEndReached = onEndReached;
     this.onElementCreated = onElementCreated;
 
@@ -12,93 +19,90 @@ export class VirtualScroller {
     this.pending = false;
     this.loading = false;
 
-    new ResizeObserver((entries) => {
-      const newHeight = entries[0].contentRect.height;
-      if (newHeight === 0 || newHeight === this.cachedHeight) return;
-
-      this.cachedHeight = newHeight;
-      window.requestAnimationFrame(() => this.refresh(true));
+    new ResizeObserver(([entry]) => {
+      const h = entry.contentRect.height;
+      if (h && h !== this.cachedHeight) {
+        this.cachedHeight = h;
+        requestAnimationFrame(() => this.refresh(true));
+      }
     }).observe(this.root);
 
     this.playObserver = new IntersectionObserver(
       (entries) => {
-        entries.forEach((entry) => {
-          const ratio = entry.intersectionRatio;
-          if (ratio > 0.8) entry.target.active = true;
-          else if (ratio < 0.6) entry.target.active = false;
-        });
+        for (const { target, intersectionRatio: r } of entries) {
+          if (r > 0.8) target.active = true;
+          else if (r < 0.6) target.active = false;
+        }
       },
-      {
-        root: this.root,
-        threshold: [0.6, 0.8],
-      },
+      { root, threshold: [0.6, 0.8] },
     );
 
-    this.root.addEventListener("scroll", () => {
-      if (this.pending) return;
-      this.pending = true;
-      requestAnimationFrame(() => {
-        this.pending = false;
-        this.refresh();
-      });
-    }, { passive: true });
+    this.root.addEventListener(
+      "scroll",
+      () => {
+        if (this.pending) return;
+        this.pending = true;
+        requestAnimationFrame(() => {
+          this.pending = false;
+          this.refresh();
+        });
+      },
+      { passive: true },
+    );
   }
 
   update(newData) {
-    const prevLen = this.data.length;
+    const grew = newData.length !== this.data.length;
     this.data = newData;
-    window.requestAnimationFrame(() => {
-      if (prevLen !== newData.length) {
-        this.root.style.setProperty("--total-items", this.data.length);
-        this.refresh(true);
-      } else {
-        for (const [i, el] of this.elements.entries()) {
-          el.data = this.data[i];
-        }
-      }
-    });
+    if (grew) {
+      this.root.style.setProperty("--total-items", newData.length);
+      requestAnimationFrame(() => this.refresh(true));
+    } else {
+      for (const [i, el] of this.elements) el.data = newData[i];
+    }
   }
 
   refresh(force = false) {
     if (!this.cachedHeight || !this.data.length) return;
 
-    const visibleIndex = Math.floor(this.root.scrollTop / this.cachedHeight);
-    if (!force && visibleIndex === this.lastVisibleIndex) return;
-    this.lastVisibleIndex = visibleIndex;
+    const visible = Math.floor(this.root.scrollTop / this.cachedHeight);
+    if (!force && visible === this.lastVisibleIndex) return;
+    this.lastVisibleIndex = visible;
 
-    const bufferSize = 2;
-    const start = Math.max(0, visibleIndex - bufferSize);
-    const end = Math.min(this.data.length, visibleIndex + 1 + bufferSize);
-
-    const indicesToKeep = new Set();
+    const start = Math.max(0, visible - this.buffer);
+    const end = Math.min(this.data.length, visible + 1 + this.buffer);
+    const keep = new Set();
 
     for (let i = start; i < end; i++) {
-      indicesToKeep.add(i);
-
-      if (!this.elements.has(i)) {
-        const el = document.createElement(this.itemTagName);
-        el.style.setProperty("--index", i);
-        this.onElementCreated?.(el);
-        el.data = this.data[i];
-        this.root.appendChild(el);
-        this.elements.set(i, el);
-        this.playObserver.observe(el);
-      }
+      keep.add(i);
+      if (!this.elements.has(i)) this.#mount(i);
     }
 
-    for (const [index, el] of this.elements.entries()) {
-      if (!indicesToKeep.has(index)) {
-        el.remove();
-        this.playObserver.unobserve(el);
-        this.elements.delete(index);
-      }
+    for (const [i, el] of this.elements) {
+      if (!keep.has(i)) this.#unmount(i, el);
     }
 
-    if (!this.loading && visibleIndex >= this.data.length - 3) {
+    if (!this.loading && visible >= this.data.length / 2) {
       this.loading = true;
       Promise.resolve(this.onEndReached?.()).finally(() => {
         this.loading = false;
       });
     }
+  }
+
+  #mount(i) {
+    const el = document.createElement(this.itemTagName);
+    el.style.setProperty("--index", i);
+    this.onElementCreated?.(el);
+    el.data = this.data[i];
+    this.root.appendChild(el);
+    this.elements.set(i, el);
+    this.playObserver.observe(el);
+  }
+
+  #unmount(i, el) {
+    el.remove();
+    this.playObserver.unobserve(el);
+    this.elements.delete(i);
   }
 }
