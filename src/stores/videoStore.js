@@ -1,3 +1,4 @@
+import { signal } from "../lib/signals.js";
 import { fetchVideos } from "../services/api.js";
 
 /**
@@ -7,60 +8,41 @@ import { fetchVideos } from "../services/api.js";
  */
 
 /**
- * @event VideoStore#statechange
- * @type {CustomEvent<import('../services/api.js').VideoModel[]>}
+ * Reactive signal holding the array of videos.
+ * @type {ReturnType<typeof signal>}
  */
+export const videos = signal([]);
 
 /**
- * Reactive store for the video feed. Extends EventTarget for zero-dependency eventing.
- * @extends {EventTarget}
- * @fires VideoStore#statechange
+ * Fetches and appends new videos to the reactive store.
+ * @returns {Promise<void>}
  */
-export class VideoStore extends EventTarget {
-  constructor() {
-    super();
-    this.state = { videos: [] };
-  }
-
-  /** @private @fires VideoStore#statechange */
-  #notify() {
-    this.dispatchEvent(
-      new CustomEvent("statechange", {
-        detail: this.state.videos,
-      }),
-    );
-  }
-
-  /** @returns {Promise<void>} */
-  async loadMore() {
-    const newVideos = await fetchVideos();
-    this.state.videos.push(...newVideos);
-    this.#notify();
-  }
-
-  /**
-   * @param {StoreAction} action
-   * @returns {void}
-   */
-  dispatch(action) {
-    const i = this.state.videos.findIndex((v) => v.id === action.id);
-    if (i === -1) return;
-
-    const video = this.state.videos[i];
-
-    switch (action.type) {
-      case "TOGGLE_LIKE":
-        video.isLiked = !video.isLiked;
-        video.likes += video.isLiked ? 1 : -1;
-        break;
-      case "TOGGLE_FOLLOW":
-        video.isFollowing = !video.isFollowing;
-        break;
-    }
-
-    this.#notify();
-  }
+export async function loadMore() {
+  const newVideos = await fetchVideos();
+  videos.value = [...videos.value, ...newVideos];
 }
 
-/** @type {VideoStore} */
-export const store = new VideoStore();
+/**
+ * Dispatches an action (like, follow) and updates the reactive store.
+ * @param {StoreAction} action
+ * @returns {void}
+ */
+export function dispatch(action) {
+  const i = videos.value.findIndex((v) => v.id === action.id);
+  if (i === -1) return;
+
+  const updated = [...videos.value];
+  const video = updated[i];
+
+  switch (action.type) {
+    case "TOGGLE_LIKE":
+      video.isLiked = !video.isLiked;
+      video.likes += video.isLiked ? 1 : -1;
+      break;
+    case "TOGGLE_FOLLOW":
+      video.isFollowing = !video.isFollowing;
+      break;
+  }
+
+  videos.value = updated;
+}
