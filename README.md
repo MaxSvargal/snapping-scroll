@@ -2,6 +2,23 @@
 
 A vertical paging flat video list with a virtual snap-scolling.
 
+## Branches
+
+This repo evolves through three versions:
+
+### [`original`](https://github.com/MaxSvargal/rabata-test-task/tree/original) — Initial implementation
+
+Hand-written JS virtual scrolling, 196 LOC. Shared observer pool and RAF debouncing.
+
+### [`minimal-perfomanced`](https://github.com/MaxSvargal/rabata-test-task/tree/minimal-perfomanced) — Performance optimizations
+
+Refactored into 5 modular files (614 LOC) adding key optimizations: hysteresis thresholds (0.6/0.8 prevents jitter), progress bar throttling (>0.5% delta reduces ~80% reflows), CSS custom properties for positioning, better event handling, double tap to like, preload and sync video with browser render.
+
+### [`main`](https://github.com/MaxSvargal/rabata-test-task/tree/main) — Production-ready
+
+Fully abstracted (672 LOC) with Component base class, signals reactive system, template decomposition (.js/.html/.css separate).
+Reusable patterns, clear lifecycle management, excellent testability, comprehensive documentation.
+
 ## Architecture
 
 ### Virtual Scroller ([src/core/VirtualScroller.js](src/core/VirtualScroller.js))
