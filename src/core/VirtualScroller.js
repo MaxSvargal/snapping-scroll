@@ -1,135 +1,108 @@
 export class VirtualScroller {
-  constructor({ root, itemTagName, poolSize = 5, onEndReached, onElementCreated }) {
+  constructor({
+    root,
+    itemTagName,
+    buffer = 2,
+    onEndReached,
+    onElementCreated,
+  }) {
     this.root = root;
     this.itemTagName = itemTagName;
-    this.poolSize = poolSize;
+    this.buffer = buffer;
     this.onEndReached = onEndReached;
     this.onElementCreated = onElementCreated;
 
     this.data = [];
-    this.domPool = [];
+    this.elements = new Map();
     this.lastVisibleIndex = -1;
     this.cachedHeight = 0;
-    this.loading = false;
     this.pending = false;
+    this.loading = false;
 
-    new ResizeObserver((entries) => {
-      const newHeight = entries[0].contentRect.height;
-      if (newHeight === 0 || newHeight === this.cachedHeight) return;
-
-      this.cachedHeight = newHeight;
-      window.requestAnimationFrame(() => this.refresh(true));
+    new ResizeObserver(([entry]) => {
+      const h = entry.contentRect.height;
+      if (h && h !== this.cachedHeight) {
+        this.cachedHeight = h;
+        requestAnimationFrame(() => this.refresh(true));
+      }
     }).observe(this.root);
 
     this.playObserver = new IntersectionObserver(
       (entries) => {
-        entries.forEach((entry) => {
-          const ratio = entry.intersectionRatio;
-          if (ratio > 0.8) entry.target.active = true;
-          else if (ratio < 0.6) entry.target.active = false;
-        });
+        for (const { target, intersectionRatio: r } of entries) {
+          if (r > 0.8) target.active = true;
+          else if (r < 0.6) target.active = false;
+        }
       },
-      {
-        root: this.root,
-        threshold: [0.6, 0.8],
-      },
+      { root, threshold: [0.6, 0.8] },
     );
 
-    // Pre-create fixed pool of elements
-    for (let i = 0; i < this.poolSize; i++) {
-      const el = document.createElement(this.itemTagName);
-      el.style.visibility = 'hidden';
-      this.onElementCreated?.(el);
-      this.root.appendChild(el);
-      this.domPool.push(el);
-      this.playObserver.observe(el);
-    }
-
-    // scrollend driver with fallback
-    const onScrollEnd = () => {
-      if (this.pending) return;
-      this.pending = true;
-      requestAnimationFrame(() => {
-        this.pending = false;
-        this.refresh();
-      });
-    };
-
-    if ("onscrollend" in this.root) {
-      this.root.addEventListener("scrollend", onScrollEnd);
-    } else {
-      // Fallback for browsers without scrollend
-      let scrollTimer;
-      this.root.addEventListener(
-        "scroll",
-        () => {
-          clearTimeout(scrollTimer);
-          scrollTimer = setTimeout(onScrollEnd, 150);
-        },
-        { passive: true },
-      );
-    }
+    this.root.addEventListener(
+      "scroll",
+      () => {
+        if (this.pending) return;
+        this.pending = true;
+        requestAnimationFrame(() => {
+          this.pending = false;
+          this.refresh();
+        });
+      },
+      { passive: true },
+    );
   }
 
   update(newData) {
+    const grew = newData.length !== this.data.length;
     this.data = newData;
-    window.requestAnimationFrame(() => {
-      this.root.style.setProperty("--total-items", this.data.length);
-      this.refresh(true);
-    });
+    if (grew) {
+      this.root.style.setProperty("--total-items", newData.length);
+      requestAnimationFrame(() => this.refresh(true));
+    } else {
+      for (const [i, el] of this.elements) el.data = newData[i];
+    }
   }
 
   refresh(force = false) {
-    if (!this.cachedHeight) return;
+    if (!this.cachedHeight || !this.data.length) return;
 
-    const visibleIndex = Math.floor(this.root.scrollTop / this.cachedHeight);
-    if (!force && visibleIndex === this.lastVisibleIndex) return;
-    this.lastVisibleIndex = visibleIndex;
+    const visible = Math.floor(this.root.scrollTop / this.cachedHeight);
+    if (!force && visible === this.lastVisibleIndex) return;
+    this.lastVisibleIndex = visible;
 
-    const half = Math.floor(this.poolSize / 2);
-    const start = Math.max(0, visibleIndex - half);
+    const start = Math.max(0, visible - this.buffer);
+    const end = Math.min(this.data.length, visible + 1 + this.buffer);
+    const keep = new Set();
 
-    const neededById = new Map();
-    for (let i = 0; i < this.poolSize; i++) {
-      const dataIndex = start + i;
-      if (dataIndex >= 0 && dataIndex < this.data.length) {
-        const item = this.data[dataIndex];
-        neededById.set(item.id, { dataIndex, item });
-      }
+    for (let i = start; i < end; i++) {
+      keep.add(i);
+      if (!this.elements.has(i)) this.#mount(i);
     }
 
-    const free = [];
-    for (const el of this.domPool) {
-      const itemId = el.dataset.id;
-      const slot = neededById.get(itemId);
-
-      if (slot) {
-        neededById.delete(itemId);
-        el.style.visibility = '';
-        el.style.setProperty("--index", slot.dataIndex);
-      } else {
-        free.push(el);
-      }
+    for (const [i, el] of this.elements) {
+      if (!keep.has(i)) this.#unmount(i, el);
     }
 
-    for (const slot of neededById.values()) {
-      const el = free.shift();
-      if (!el) break;
-      el.style.visibility = '';
-      el.style.setProperty("--index", slot.dataIndex);
-      el.dataset.id = slot.item.id;
-      el.data = slot.item;
-    }
-
-    for (const el of free) {
-      el.style.visibility = 'hidden';
-    }
-
-    if (!this.loading && this.data.length > 0 && visibleIndex >= this.data.length / 2) {
+    if (!this.loading && visible >= this.data.length / 2) {
       this.loading = true;
       Promise.resolve(this.onEndReached?.()).finally(() => {
         this.loading = false;
       });
     }
+  }
+
+  #mount(i) {
+    const el = document.createElement(this.itemTagName);
+    el.style.setProperty("--index", i);
+    this.onElementCreated?.(el);
+    el.data = this.data[i];
+    this.root.appendChild(el);
+    this.elements.set(i, el);
+    this.playObserver.observe(el);
+  }
+
+  #unmount(i, el) {
+    el.remove();
+    this.playObserver.unobserve(el);
+    this.elements.delete(i);
   }
 }
