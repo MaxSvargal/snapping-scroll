@@ -74,13 +74,6 @@ html {
   background: #000;
 }
 
-.feed-container .runway {
-  position: absolute;
-  width: 1px;
-  height: calc(var(--total-items, 0) * 100%);
-  pointer-events: none;
-}
-
 reel-item {
   --index: 0;
   -webkit-tap-highlight-color: transparent;
