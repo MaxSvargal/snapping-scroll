@@ -1,6 +1,6 @@
 # Snapping Scroll Demo
 
-A vertical video reel with a virtual scroller, built with vanilla JS Web Components and no dependencies.
+A vertical paging flat video list with a virtual snap-scolling.
 
 ## Architecture
 
