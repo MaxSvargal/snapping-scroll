@@ -3,7 +3,9 @@ import "./style.css";
 
 import { store } from "./stores/videoStore.js";
 import { VirtualScroller } from "./core/VirtualScroller.js";
-import "./components/ReelItem.js";
+import { ReelItem } from "./components/ReelItem.js";
+
+customElements.define("reel-item", ReelItem);
 
 const scroller = new VirtualScroller({
   root: document.getElementById("videos"),
