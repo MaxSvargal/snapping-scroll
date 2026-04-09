@@ -1,21 +1,22 @@
 /** @module index Bootstraps the app: wires VideoStore → VirtualScroller → ReelItem. */
 import "./style.css";
 
-import { store } from "./stores/videoStore.js";
+import { videos, loadMore, dispatch } from "./stores/videoStore.js";
+import { effect } from "./lib/signals.js";
 import { VirtualScroller } from "./core/VirtualScroller.js";
-import "./components/ReelItem.js";
+import { ReelItem } from "./components/ReelItem.js";
+
+customElements.define("reel-item", ReelItem);
 
 const scroller = new VirtualScroller({
   root: document.getElementById("videos"),
   itemTagName: "reel-item",
-  onEndReached: () => store.loadMore(),
+  onEndReached: () => loadMore(),
   onElementCreated: (el) => {
-    el.onAction = (action) => store.dispatch(action);
+    el.onAction = (action) => dispatch(action);
   },
 });
 
-store.addEventListener("statechange", (e) => {
-  scroller.update(e.detail);
-});
+effect(() => scroller.update(videos.value));
 
-store.loadMore();
+loadMore();

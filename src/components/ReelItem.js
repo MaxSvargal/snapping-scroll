@@ -1,49 +1,55 @@
+import { Component, cssFrom, htmlFrom } from "../lib/Component.js";
+import { signal } from "../lib/signals.js";
+import reelItemCss from "./ReelItem.css?raw";
+import reelItemHtml from "./ReelItem.html?raw";
+
 const DOUBLE_TAP_THRESHOLD_MS = 300;
 const PROGRESS_THRESHOLD = 0.5;
 
 /**
  * Custom element for a single video card in the reel feed.
  * @element reel-item
- * @extends {HTMLElement}
+ * @extends {Component}
  * @property {((action: import('../stores/videoStore.js').StoreAction) => void) | undefined} onAction
  *   Assigned by the consumer to receive user interaction actions (like, follow).
  */
-export class ReelItem extends HTMLElement {
+export class ReelItem extends Component {
+  static styles = cssFrom(reelItemCss);
+  static template = htmlFrom(reelItemHtml);
+
   #rVFCId = null;
-  #lastProgress = 0;
   #isActive = false;
   #lastTap = 0;
   #pendingData = null;
   #tapTimeout = null;
-  #fallbackRafId = null;
+  #timeUpdateListener = null;
+  #_currentLikes = 0;
 
   constructor() {
     super();
-    this.initialized = false;
     this._onVisibilityChange = () => this.#handleVisibilityChange();
   }
 
-  connectedCallback() {
-    if (this.initialized) return;
-    this.initialized = true;
+  onInit() {
+    this.state = {
+      username: signal(""),
+      avatar: signal(""),
+      description: signal(""),
+      category: signal(""),
+      likes: signal("0"),
+      isLiked: signal(false),
+      isFollowing: signal(false),
+    };
 
-    const template = document.getElementById("reel-template");
-    if (!template) return;
-    this.appendChild(template.content.cloneNode(true));
-
-    this.video = this.querySelector("video");
+    this.video = this.shadowRoot.querySelector(".reels-video");
     this.ui = {
-      progressBar: this.querySelector(".progress-bar"),
-      progressContainer: this.querySelector(".progress-container"),
-      descContainer: this.querySelector(".description-container"),
-      description: this.querySelector(".description"),
-      likeBtn: this.querySelector(".like-btn"),
-      followBtn: this.querySelector(".follow-btn"),
-      avatar: this.querySelector(".avatar"),
-      username: this.querySelector(".username"),
-      category: this.querySelector(".category"),
-      likeCount: this.querySelector(".like-count"),
-      floatingHeart: this.querySelector(".floating-heart"),
+      progressBar: this.shadowRoot.querySelector(".progress-bar"),
+      progressContainer: this.shadowRoot.querySelector(".progress-container"),
+      descContainer: this.shadowRoot.querySelector(".description-container"),
+      floatingHeart: this.shadowRoot.querySelector(".floating-heart"),
+      likeBtn: this.shadowRoot.querySelector(".like-btn"),
+      avatar: this.shadowRoot.querySelector(".avatar"),
+      followBtn: this.shadowRoot.querySelector(".follow-btn"),
     };
 
     document.addEventListener("visibilitychange", this._onVisibilityChange);
@@ -69,7 +75,7 @@ export class ReelItem extends HTMLElement {
    * @param {import('../services/api.js').VideoModel | null} model
    */
   set data(model) {
-    if (!this.initialized) {
+    if (!this.video) {
       if (model) this.#pendingData = model;
       return;
     }
@@ -80,45 +86,40 @@ export class ReelItem extends HTMLElement {
     }
 
     const isNewItem = !this._id || this._id !== model.id;
-
     if (isNewItem) {
       this.#setItemData(model);
     }
 
-    if (this._likes !== model.likes) {
-      this._likes = model.likes;
-      this.ui.likeCount.textContent = this.#formatCount(model.likes);
-    }
+    this.#updateState(model);
+  }
 
-    if (this._isFollowing !== model.isFollowing) {
-      this._isFollowing = model.isFollowing;
-      this.ui.followBtn.classList.toggle("following", model.isFollowing);
-      this.ui.followBtn.textContent = model.isFollowing ? "✓" : "+";
-    }
+  #updateState(model) {
+    this.state.likes.value = this.#formatCount(model.likes);
+    this.state.isLiked.value = model.isLiked;
+    this.state.isFollowing.value = model.isFollowing;
+    this.#updateFollowBtnText();
+  }
 
-    if (this._isLiked !== model.isLiked) {
-      this._isLiked = model.isLiked;
-      this.ui.likeBtn.classList.toggle("liked", model.isLiked);
-    }
+  #updateFollowBtnText() {
+    this.ui.followBtn.textContent = this.state.isFollowing.value ? "✓" : "+";
   }
 
   #setItemData(model) {
     this._id = model.id;
-    this.ui.avatar.src = model.avatar;
-    this.ui.username.textContent = model.username;
-    this.ui.description.textContent = model.description;
-    this.ui.category.textContent = model.category;
+    this.#_currentLikes = model.likes;
+
+    this.state.avatar.value = model.avatar;
+    this.state.username.value = model.username;
+    this.state.description.value = model.description;
+    this.state.category.value = model.category;
 
     const newSrc = window.location.origin + `/${model.src}`;
     if (this.video.src !== newSrc) {
       this.video.pause();
       this.#stopProgressLoop();
-
       this.video.removeAttribute("src");
       this.video.load();
-
       this.video.src = newSrc;
-      this.#lastProgress = 0;
     }
   }
 
@@ -128,10 +129,9 @@ export class ReelItem extends HTMLElement {
    * @param {boolean} isActive
    */
   set active(isActive) {
-    if (!this.initialized || this.#isActive === isActive) return;
+    if (this.#isActive === isActive) return;
     this.#isActive = isActive;
-    if (isActive) this.#play();
-    else this.#pause();
+    isActive ? this.#play() : this.#pause();
   }
 
   #play() {
@@ -163,6 +163,7 @@ export class ReelItem extends HTMLElement {
       this.video &&
       typeof this.video.requestVideoFrameCallback === "function"
     ) {
+      let lastProgress = 0;
       const frame = (_now, meta) => {
         if (!this.video.duration) {
           this.#rVFCId = this.video.requestVideoFrameCallback(frame);
@@ -170,28 +171,20 @@ export class ReelItem extends HTMLElement {
         }
 
         const progress = (meta.mediaTime / this.video.duration) * 100;
-
-        if (Math.abs(progress - this.#lastProgress) > PROGRESS_THRESHOLD) {
+        if (Math.abs(progress - lastProgress) > PROGRESS_THRESHOLD) {
           this.ui.progressBar.style.width = `${progress}%`;
-          this.#lastProgress = progress;
+          lastProgress = progress;
         }
-
         this.#rVFCId = this.video.requestVideoFrameCallback(frame);
       };
       this.#rVFCId = this.video.requestVideoFrameCallback(frame);
     } else {
-      const onTimeUpdate = () => {
+      this.#timeUpdateListener = () => {
         if (!this.video.duration) return;
-
         const progress = (this.video.currentTime / this.video.duration) * 100;
-        if (Math.abs(progress - this.#lastProgress) > PROGRESS_THRESHOLD) {
-          this.ui.progressBar.style.width = `${progress}%`;
-          this.#lastProgress = progress;
-        }
+        this.ui.progressBar.style.width = `${progress}%`;
       };
-
-      this.video?.addEventListener("timeupdate", onTimeUpdate);
-      this._timeUpdateListener = onTimeUpdate;
+      this.video?.addEventListener("timeupdate", this.#timeUpdateListener);
     }
   }
 
@@ -200,15 +193,9 @@ export class ReelItem extends HTMLElement {
       this.video?.cancelVideoFrameCallback(this.#rVFCId);
       this.#rVFCId = null;
     }
-
-    if (this._timeUpdateListener) {
-      this.video?.removeEventListener("timeupdate", this._timeUpdateListener);
-      this._timeUpdateListener = null;
-    }
-
-    if (this.#fallbackRafId) {
-      cancelAnimationFrame(this.#fallbackRafId);
-      this.#fallbackRafId = null;
+    if (this.#timeUpdateListener) {
+      this.video?.removeEventListener("timeupdate", this.#timeUpdateListener);
+      this.#timeUpdateListener = null;
     }
   }
 
@@ -226,18 +213,14 @@ export class ReelItem extends HTMLElement {
 
   #setupGestureHandling() {
     this.video?.addEventListener("pointerdown", (e) => {
-      const now = performance.now();
-      const tapLength = now - this.#lastTap;
-
+      const tapLength = performance.now() - this.#lastTap;
       if (tapLength < DOUBLE_TAP_THRESHOLD_MS && tapLength > 0) {
         e.preventDefault();
       }
     });
 
     this.video?.addEventListener("pointerup", (e) => {
-      const now = performance.now();
-      const tapLength = now - this.#lastTap;
-
+      const tapLength = performance.now() - this.#lastTap;
       if (tapLength < DOUBLE_TAP_THRESHOLD_MS && tapLength > 0) {
         clearTimeout(this.#tapTimeout);
         this.#handleDoubleTap(e);
@@ -248,17 +231,37 @@ export class ReelItem extends HTMLElement {
           DOUBLE_TAP_THRESHOLD_MS,
         );
       }
-
-      this.#lastTap = now;
+      this.#lastTap = performance.now();
     });
+  }
+
+  #updateLikeState() {
+    const isNowLiked = !this.state.isLiked.value;
+    this.state.isLiked.value = isNowLiked;
+    this.#_currentLikes = (this.#_currentLikes || 0) + (isNowLiked ? 1 : -1);
+    this.state.likes.value = this.#formatCount(this.#_currentLikes);
+    if (isNowLiked) this.#triggerLikeAnimation();
+  }
+
+  toggleLike() {
+    this.#updateLikeState();
+    this.onAction?.({ type: "TOGGLE_LIKE", id: this._id });
+  }
+
+  toggleFollow(e) {
+    e.stopPropagation();
+    this.state.isFollowing.value = !this.state.isFollowing.value;
+    this.#updateFollowBtnText();
+    this.onAction?.({ type: "TOGGLE_FOLLOW", id: this._id });
   }
 
   #setupUIListeners() {
     this.ui.progressContainer?.addEventListener("click", (e) => {
       const rect = this.ui.progressContainer.getBoundingClientRect();
       const pos = (e.clientX - rect.left) / rect.width;
-      if (this.video.duration)
+      if (this.video?.duration) {
         this.video.currentTime = pos * this.video.duration;
+      }
     });
 
     this.ui.descContainer?.addEventListener("click", () => {
@@ -268,30 +271,17 @@ export class ReelItem extends HTMLElement {
     this.ui.floatingHeart?.addEventListener("animationend", () => {
       this.ui.floatingHeart.classList.remove("animate");
     });
-
-    this.ui.likeBtn?.addEventListener("click", () => {
-      const isLiked = this.ui.likeBtn.classList.toggle("liked");
-      if (isLiked) this.#triggerLikeAnimation();
-      this.onAction?.({ type: "TOGGLE_LIKE", id: this._id });
-    });
-
-    this.ui.followBtn?.addEventListener("click", (e) => {
-      e.stopPropagation();
-      this.onAction?.({ type: "TOGGLE_FOLLOW", id: this._id });
-    });
   }
 
   #handleDoubleTap(e) {
-    const isNowLiked = this.ui.likeBtn.classList.toggle("liked");
-    if (isNowLiked) this.#triggerLikeAnimation();
-    this.onAction?.({ type: "TOGGLE_LIKE", id: this._id });
+    this.#updateLikeState();
     this.#showDoubleTapHeart(e.clientX, e.clientY);
+    this.onAction?.({ type: "TOGGLE_LIKE", id: this._id });
     e.preventDefault();
   }
 
   #handleSingleTap() {
-    if (this.video.paused) this.#play();
-    else this.#pause();
+    this.video.paused ? this.#play() : this.#pause();
   }
 
   #triggerLikeAnimation() {
@@ -327,5 +317,3 @@ export class ReelItem extends HTMLElement {
     return num >= 1000 ? (num / 1000).toFixed(1) + "K" : num.toString();
   }
 }
-
-customElements.define("reel-item", ReelItem);
