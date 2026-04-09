@@ -1,24 +1,32 @@
 export class VirtualScroller {
-  constructor({ root, itemTagName, onEndReached, onElementCreated }) {
+  constructor({
+    root,
+    itemTagName,
+    onEndReached,
+    onElementCreated,
+    poolSize = 5,
+  }) {
     this.root = root;
     this.itemTagName = itemTagName;
     this.onEndReached = onEndReached;
     this.onElementCreated = onElementCreated;
 
     this.data = [];
-    this.elements = new Map();
-    this.lastVisibleIndex = -1;
-    this.cachedHeight = 0;
-    this.pending = false;
+    this.pool = [];
+    this.itemHeight = 0;
+    this.lastRefreshIndex = -1;
     this.loading = false;
 
-    new ResizeObserver((entries) => {
-      const newHeight = entries[0].contentRect.height;
-      if (newHeight === 0 || newHeight === this.cachedHeight) return;
+    this.runway = document.createElement("div");
+    this.runway.className = "runway";
+    this.root.appendChild(this.runway);
 
-      this.cachedHeight = newHeight;
-      window.requestAnimationFrame(() => this.refresh(true));
-    }).observe(this.root);
+    for (let i = 0; i < poolSize; i++) {
+      const el = document.createElement(itemTagName);
+      this.onElementCreated?.(el);
+      this.root.appendChild(el);
+      this.pool.push(el);
+    }
 
     this.playObserver = new IntersectionObserver(
       (entries) => {
@@ -34,67 +42,91 @@ export class VirtualScroller {
       },
     );
 
-    this.root.addEventListener("scroll", () => {
-      if (this.pending) return;
-      this.pending = true;
-      requestAnimationFrame(() => {
-        this.pending = false;
-        this.refresh();
-      });
-    }, { passive: true });
+    this.pool.forEach((el) => this.playObserver.observe(el));
+
+    window.addEventListener("resize", () => {
+      const newHeight = this.root.clientHeight;
+      if (newHeight !== this.itemHeight) {
+        this.itemHeight = newHeight;
+        this.#refresh();
+      }
+    });
+
+    const onScrollEnd = () => this.#refresh();
+
+    if ("onscrollend" in this.root) {
+      this.root.addEventListener("scrollend", onScrollEnd);
+    } else {
+      let scrollTimer;
+      this.root.addEventListener(
+        "scroll",
+        () => {
+          clearTimeout(scrollTimer);
+          scrollTimer = setTimeout(onScrollEnd, 150);
+        },
+        { passive: true },
+      );
+    }
   }
 
   update(newData) {
     const prevLen = this.data.length;
     this.data = newData;
+
     window.requestAnimationFrame(() => {
+      this.root.style.setProperty("--total-items", this.data.length);
+      this.runway.style.height = `calc(var(--total-items) * 100%)`;
+
       if (prevLen !== newData.length) {
-        this.root.style.setProperty("--total-items", this.data.length);
-        this.refresh(true);
+        this.#refresh();
       } else {
-        for (const [i, el] of this.elements.entries()) {
-          el.data = this.data[i];
-        }
+        this.pool.forEach((el) => {
+          if (el._id) {
+            const dataIndex = this.data.findIndex((d) => d.id === el._id);
+            if (dataIndex !== -1) {
+              el.data = this.data[dataIndex];
+            }
+          }
+        });
       }
     });
   }
 
-  refresh(force = false) {
-    if (!this.cachedHeight || !this.data.length) return;
+  #refresh() {
+    if (!this.itemHeight || !this.data.length) return;
 
-    const visibleIndex = Math.floor(this.root.scrollTop / this.cachedHeight);
-    if (!force && visibleIndex === this.lastVisibleIndex) return;
-    this.lastVisibleIndex = visibleIndex;
+    const index = (this.root.scrollTop / this.itemHeight) | 0;
+    if (index === this.lastRefreshIndex) return;
+    this.lastRefreshIndex = index;
 
-    const bufferSize = 2;
-    const start = Math.max(0, visibleIndex - bufferSize);
-    const end = Math.min(this.data.length, visibleIndex + 1 + bufferSize);
+    const half = (this.pool.length / 2) | 0;
+    const start = Math.max(0, index - half);
 
-    const indicesToKeep = new Set();
+    this.pool.forEach((el, i) => {
+      const dataIndex = start + i;
+      const data = this.data[dataIndex];
 
-    for (let i = start; i < end; i++) {
-      indicesToKeep.add(i);
-
-      if (!this.elements.has(i)) {
-        const el = document.createElement(this.itemTagName);
-        el.style.setProperty("--index", i);
-        this.onElementCreated?.(el);
-        el.data = this.data[i];
-        this.root.appendChild(el);
-        this.elements.set(i, el);
-        this.playObserver.observe(el);
+      if (!data) {
+        el.style.visibility = "hidden";
+        return;
       }
-    }
 
-    for (const [index, el] of this.elements.entries()) {
-      if (!indicesToKeep.has(index)) {
-        el.remove();
-        this.playObserver.unobserve(el);
-        this.elements.delete(index);
+      el.style.visibility = "";
+
+      if (el._id !== data.id) {
+        el._id = data.id;
+        el.data = data;
+        el.style.setProperty("--index", dataIndex);
       }
-    }
+    });
 
-    if (!this.loading && visibleIndex >= this.data.length - 3) {
+    this.pool.forEach((el, i) => {
+      const dataIndex = start + i;
+      const isNearActive = Math.abs(dataIndex - index) <= 1;
+      el.style.willChange = isNearActive ? "transform" : "auto";
+    });
+
+    if (!this.loading && index >= this.data.length - 3) {
       this.loading = true;
       Promise.resolve(this.onEndReached?.()).finally(() => {
         this.loading = false;
