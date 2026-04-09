@@ -1,4 +1,17 @@
+/**
+ * @typedef {Object} VirtualScrollerOptions
+ * @property {HTMLElement} root - scrollable container; must have a fixed height
+ * @property {string} itemTagName - custom element tag name to instantiate per item
+ * @property {number} [buffer=2] - items to keep mounted above and below the visible window
+ * @property {() => (void|Promise<void>)} [onEndReached] - called when scroll passes the 50% data midpoint; guarded by a `loading` flag
+ * @property {(el: HTMLElement) => void} [onElementCreated] - hook called after an element is created, before data is assigned
+ */
+
+/**
+ * Manages a windowed set of DOM elements for a vertically-paged scroll container.
+ */
 export class VirtualScroller {
+  /** @param {VirtualScrollerOptions} options */
   constructor({
     root,
     itemTagName,
@@ -51,6 +64,12 @@ export class VirtualScroller {
     );
   }
 
+  /**
+   * Replaces the dataset. If the array grew, remounts with a forced refresh;
+   * otherwise patches data in-place on currently mounted elements.
+   * @param {import('../services/api.js').VideoModel[]} newData
+   * @returns {void}
+   */
   update(newData) {
     const grew = newData.length !== this.data.length;
     this.data = newData;
@@ -62,6 +81,11 @@ export class VirtualScroller {
     }
   }
 
+  /**
+   * Recalculates the visible window and mounts/unmounts elements accordingly.
+   * @param {boolean} [force=false] - when true, remounts even if the visible index is unchanged
+   * @returns {void}
+   */
   refresh(force = false) {
     if (!this.cachedHeight || !this.data.length) return;
 
@@ -90,6 +114,10 @@ export class VirtualScroller {
     }
   }
 
+  /**
+   * @private
+   * @param {number} i - data index to mount
+   */
   #mount(i) {
     const el = document.createElement(this.itemTagName);
     el.style.setProperty("--index", i);
@@ -100,6 +128,11 @@ export class VirtualScroller {
     this.playObserver.observe(el);
   }
 
+  /**
+   * @private
+   * @param {number} i
+   * @param {HTMLElement} el
+   */
   #unmount(i, el) {
     el.remove();
     this.playObserver.unobserve(el);

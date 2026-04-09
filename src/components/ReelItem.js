@@ -1,6 +1,13 @@
 const DOUBLE_TAP_THRESHOLD_MS = 300;
 const PROGRESS_THRESHOLD = 0.5;
 
+/**
+ * Custom element for a single video card in the reel feed.
+ * @element reel-item
+ * @extends {HTMLElement}
+ * @property {((action: import('../stores/videoStore.js').StoreAction) => void) | undefined} onAction
+ *   Assigned by the consumer to receive user interaction actions (like, follow).
+ */
 export class ReelItem extends HTMLElement {
   #rVFCId = null;
   #lastProgress = 0;
@@ -55,6 +62,12 @@ export class ReelItem extends HTMLElement {
     this.#pause();
   }
 
+  /**
+   * Assigns a video model. A new `id` triggers a full reload (src + all UI fields);
+   * the same id patches only changed reactive fields (likes, isLiked, isFollowing).
+   * Passing `null` pauses playback.
+   * @param {import('../services/api.js').VideoModel | null} model
+   */
   set data(model) {
     if (!this.initialized) {
       if (model) this.#pendingData = model;
@@ -109,6 +122,11 @@ export class ReelItem extends HTMLElement {
     }
   }
 
+  /**
+   * `true` starts playback and the progress loop (respects `readyState`);
+   * `false` pauses and stops the progress loop.
+   * @param {boolean} isActive
+   */
   set active(isActive) {
     if (!this.initialized || this.#isActive === isActive) return;
     this.#isActive = isActive;
@@ -285,6 +303,11 @@ export class ReelItem extends HTMLElement {
     });
   }
 
+  /**
+   * @private
+   * @param {number} x - viewport x coordinate of the tap
+   * @param {number} y - viewport y coordinate of the tap
+   */
   #showDoubleTapHeart(x, y) {
     const heart = this.ui.floatingHeart;
     if (!heart || heart.classList.contains("animate")) return;
@@ -295,6 +318,11 @@ export class ReelItem extends HTMLElement {
     heart.classList.add("animate");
   }
 
+  /**
+   * @private
+   * @param {number} num
+   * @returns {string}
+   */
   #formatCount(num) {
     return num >= 1000 ? (num / 1000).toFixed(1) + "K" : num.toString();
   }

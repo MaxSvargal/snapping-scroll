@@ -1,3 +1,4 @@
+/** @module index Bootstraps the app: wires VideoStore → VirtualScroller → ReelItem. */
 import "./style.css";
 
 import { store } from "./stores/videoStore.js";

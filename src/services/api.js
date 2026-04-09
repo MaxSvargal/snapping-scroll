@@ -1,3 +1,16 @@
+/**
+ * @typedef {Object} VideoModel
+ * @property {string} id
+ * @property {string} src - filename relative to origin (no leading slash)
+ * @property {string} username
+ * @property {string} avatar - absolute avatar URL
+ * @property {string} description
+ * @property {string} category
+ * @property {number} likes
+ * @property {boolean} isLiked
+ * @property {boolean} isFollowing
+ */
+
 const VIDEOS = [
   "-1381854028232193089.MP4",
   "-2466797579047759691.MP4",
@@ -14,6 +27,10 @@ const VIDEOS = [
 
 let globalIdCounter = 0;
 
+/**
+ * Simulates a network fetch (~300 ms) and resolves with one batch of videos.
+ * @returns {Promise<VideoModel[]>}
+ */
 export async function fetchVideos() {
   return new Promise((resolve) => {
     setTimeout(() => {
