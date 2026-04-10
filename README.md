@@ -43,7 +43,7 @@ const scroller = new VirtualScroller({
 - **Index-based positioning** — `--index` CSS custom property avoids JS layout reads on scroll.
 - **Debounced scroll** — `pending` flag batches scroll events into one `requestAnimationFrame` pass.
 - **Lazy loading at 50%** — fires early enough to fetch before user reaches empty items.
-- **Generalized API** — accepts any tag name, mounts/unmounts its children, invokes callbacks. Scales from 100→100k items.
+- **Generalized API** — accepts any tag name, mounts/unmounts its children, invokes callbacks.
 
 ### Reel Item ([src/components/ReelItem.js](src/components/ReelItem.js))
 
@@ -112,7 +112,7 @@ export function signal(initialValue) {
 }
 ```
 
-**Why signals?** No virtual DOM, no dependency arrays. Read a signal in an effect → auto-subscribes. Updates batch via microtasks. ~50 lines. Reusable: works for stores, animations, form state—not just videos.
+**Why signals?** No virtual DOM, no dependency arrays. Read a signal in an effect → auto-subscribes. Updates batch via microtasks. ~50 lines.
 
 #### Component Base Class ([src/lib/Component.js](src/lib/Component.js))
 
@@ -177,7 +177,7 @@ Separates reusable patterns (signals, Component, VirtualScroller) from video-spe
 | `components/ReelItem.js`  | Video UI + gestures               | Domain-specific       |
 | `index.js`                | Orchestration                     | Domain-specific       |
 
-`VirtualScroller` doesn't know about videos—pass any tag name (`"photo-card"`, `"audio-track"`), mount/unmount it, invoke callbacks. When generalized tools ignore domain logic:
+`VirtualScroller` doesn't know about videos, just mount/unmount, invoke callbacks. When generalized tools ignore domain logic:
 
 - **Testable**: Mock items in `VirtualScroller`. Test signals without DOM.
 - **Reusable**: Build a photo feed using the same `signals`, `Component`, and `VirtualScroller`.
