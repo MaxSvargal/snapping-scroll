@@ -1,5 +1,8 @@
 <video class="reels-video" playsinline preload="auto" loop></video>
-<div class="floating-heart">
+<div
+  class="floating-heart"
+  data-bind="style:heartLeft:left style:heartTop:top class:isHeartAnimating:animate"
+>
   <svg
     xmlns="http://www.w3.org/2000/svg"
     viewBox="0 0 24 24"
@@ -19,9 +22,19 @@
   <div class="reels-sidebar">
     <div class="sidebar-item avatar-container">
       <img class="avatar" data-bind="attr:avatar:src" alt="Avatar" />
-      <button class="follow-btn" data-bind="text:followBtnText class:isFollowing:following" data-action="toggleFollow">+</button>
+      <button
+        class="follow-btn"
+        data-bind="text:followBtnText class:isFollowing:following"
+        data-action="toggleFollow"
+      >
+        +
+      </button>
     </div>
-    <div class="sidebar-item like-btn" data-bind="class:isLiked:liked" data-action="toggleLike">
+    <div
+      class="sidebar-item like-btn"
+      data-bind="class:isLiked:liked class:isLikeAnimating:like-animating"
+      data-action="toggleLike"
+    >
       <svg
         class="icon heart-icon"
         viewBox="0 0 24 24"
@@ -86,19 +99,22 @@
       <span class="username" data-bind="text:username">@username</span>
       <span class="category" data-bind="text:category">Entertainment</span>
     </div>
-    <div class="description-container">
+    <div
+      class="description-container"
+      data-bind="class:isDescExpanded:expanded"
+      data-action="toggleDescription"
+    >
       <p class="description" data-bind="text:description">
-        Experience the beauty of this amazing moment. Tap to read more
-        about what's happening in this video and discover new
-        perspectives...
+        Experience the beauty of this amazing moment. Tap to read more about
+        what's happening in this video and discover new perspectives...
       </p>
       <span class="more-btn">more</span>
     </div>
   </div>
 
-  <div class="progress-container">
+  <div class="progress-container" data-action="seekVideo">
     <div class="progress-bar-bg">
-      <div class="progress-bar"></div>
+      <div class="progress-bar" data-bind="style:progress:width"></div>
     </div>
   </div>
 </div>

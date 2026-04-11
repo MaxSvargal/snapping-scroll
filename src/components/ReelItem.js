@@ -39,18 +39,22 @@ export class ReelItem extends Component {
       likes: signal("0"),
       isLiked: signal(false),
       isFollowing: signal(false),
+      followBtnText: signal("+"),
+      progress: signal("0%"),
+      isDescExpanded: signal(false),
+      isHeartAnimating: signal(false),
+      heartLeft: signal("0px"),
+      heartTop: signal("0px"),
+      isLikeAnimating: signal(false),
     };
 
     this.video = this.shadowRoot.querySelector(".reels-video");
-    this.ui = {
-      progressBar: this.shadowRoot.querySelector(".progress-bar"),
-      progressContainer: this.shadowRoot.querySelector(".progress-container"),
-      descContainer: this.shadowRoot.querySelector(".description-container"),
-      floatingHeart: this.shadowRoot.querySelector(".floating-heart"),
-      likeBtn: this.shadowRoot.querySelector(".like-btn"),
-      avatar: this.shadowRoot.querySelector(".avatar"),
-      followBtn: this.shadowRoot.querySelector(".follow-btn"),
-    };
+
+    this.shadowRoot
+      .querySelector(".floating-heart")
+      .addEventListener("animationend", () => {
+        this.state.isHeartAnimating.value = false;
+      });
 
     document.addEventListener("visibilitychange", this._onVisibilityChange);
     this.#bindEvents();
@@ -97,11 +101,7 @@ export class ReelItem extends Component {
     this.state.likes.value = this.#formatCount(model.likes);
     this.state.isLiked.value = model.isLiked;
     this.state.isFollowing.value = model.isFollowing;
-    this.#updateFollowBtnText();
-  }
-
-  #updateFollowBtnText() {
-    this.ui.followBtn.textContent = this.state.isFollowing.value ? "✓" : "+";
+    this.state.followBtnText.value = this.state.isFollowing.value ? "✓" : "+";
   }
 
   #setItemData(model) {
@@ -172,7 +172,7 @@ export class ReelItem extends Component {
 
         const progress = (meta.mediaTime / this.video.duration) * 100;
         if (Math.abs(progress - lastProgress) > PROGRESS_THRESHOLD) {
-          this.ui.progressBar.style.width = `${progress}%`;
+          this.state.progress.value = `${progress}%`;
           lastProgress = progress;
         }
         this.#rVFCId = this.video.requestVideoFrameCallback(frame);
@@ -182,7 +182,7 @@ export class ReelItem extends Component {
       this.#timeUpdateListener = () => {
         if (!this.video.duration) return;
         const progress = (this.video.currentTime / this.video.duration) * 100;
-        this.ui.progressBar.style.width = `${progress}%`;
+        this.state.progress.value = `${progress}%`;
       };
       this.video?.addEventListener("timeupdate", this.#timeUpdateListener);
     }
@@ -202,7 +202,6 @@ export class ReelItem extends Component {
   #bindEvents() {
     this.#setupVideoLifecycleEvents();
     this.#setupGestureHandling();
-    this.#setupUIListeners();
   }
 
   #setupVideoLifecycleEvents() {
@@ -251,26 +250,19 @@ export class ReelItem extends Component {
   toggleFollow(e) {
     e.stopPropagation();
     this.state.isFollowing.value = !this.state.isFollowing.value;
-    this.#updateFollowBtnText();
+    this.state.followBtnText.value = this.state.isFollowing.value ? "✓" : "+";
     this.onAction?.({ type: "TOGGLE_FOLLOW", id: this._id });
   }
 
-  #setupUIListeners() {
-    this.ui.progressContainer?.addEventListener("click", (e) => {
-      const rect = this.ui.progressContainer.getBoundingClientRect();
-      const pos = (e.clientX - rect.left) / rect.width;
-      if (this.video?.duration) {
-        this.video.currentTime = pos * this.video.duration;
-      }
-    });
+  seekVideo(e, target) {
+    const rect = target.getBoundingClientRect();
+    const pos = (e.clientX - rect.left) / rect.width;
+    if (this.video?.duration)
+      this.video.currentTime = pos * this.video.duration;
+  }
 
-    this.ui.descContainer?.addEventListener("click", () => {
-      this.ui.descContainer.classList.toggle("expanded");
-    });
-
-    this.ui.floatingHeart?.addEventListener("animationend", () => {
-      this.ui.floatingHeart.classList.remove("animate");
-    });
+  toggleDescription() {
+    this.state.isDescExpanded.value = !this.state.isDescExpanded.value;
   }
 
   #handleDoubleTap(e) {
@@ -285,12 +277,12 @@ export class ReelItem extends Component {
   }
 
   #triggerLikeAnimation() {
-    requestAnimationFrame(() => {
-      this.ui.likeBtn.classList.remove("liked");
+    this.state.isLikeAnimating.value = false;
+    requestAnimationFrame(() =>
       requestAnimationFrame(() => {
-        this.ui.likeBtn.classList.add("liked");
-      });
-    });
+        this.state.isLikeAnimating.value = true;
+      }),
+    );
   }
 
   /**
@@ -299,13 +291,11 @@ export class ReelItem extends Component {
    * @param {number} y - viewport y coordinate of the tap
    */
   #showDoubleTapHeart(x, y) {
-    const heart = this.ui.floatingHeart;
-    if (!heart || heart.classList.contains("animate")) return;
-
+    if (this.state.isHeartAnimating.value) return;
     const rect = this.getBoundingClientRect();
-    heart.style.left = `${x - rect.left - 40}px`;
-    heart.style.top = `${y - rect.top - 40}px`;
-    heart.classList.add("animate");
+    this.state.heartLeft.value = `${x - rect.left - 40}px`;
+    this.state.heartTop.value = `${y - rect.top - 40}px`;
+    this.state.isHeartAnimating.value = true;
   }
 
   /**

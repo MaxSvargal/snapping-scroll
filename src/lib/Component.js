@@ -79,6 +79,8 @@ export class Component extends HTMLElement {
             } else {
               el.setAttribute(extra, val);
             }
+          } else if (type === "style") {
+            el.style[extra] = val;
           }
         });
       });
