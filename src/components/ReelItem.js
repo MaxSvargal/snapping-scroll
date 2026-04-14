@@ -29,13 +29,12 @@ export class ReelItem extends Component {
   );
 
   state = reactive({
-    // mapped from model
     username: "",
     avatar: "",
     description: "",
     category: "",
-    likesCount: 0,      // raw number for arithmetic
-    likes: "0",         // formatted string for display
+    likesCount: 0,
+    likes: "0",
     isLiked: false,
     isFollowing: false,
     // local UI
@@ -81,15 +80,35 @@ export class ReelItem extends Component {
       this.#pendingData = videoModel ?? this.#pendingData;
       return;
     }
-    if (!videoModel) { this.#pause(); return; }
+    if (!videoModel) {
+      this.#pause();
+      return;
+    }
     this.#applyModel(videoModel);
   }
 
   #applyModel(videoModel) {
-    const { id, src, username, avatar, description, category, likes, isLiked, isFollowing } = videoModel;
+    const {
+      id,
+      src,
+      username,
+      avatar,
+      description,
+      category,
+      likes,
+      isLiked,
+      isFollowing,
+    } = videoModel;
     this._id = id;
 
-    Object.assign(this.state, { username, avatar, description, category, isLiked, isFollowing });
+    Object.assign(this.state, {
+      username,
+      avatar,
+      description,
+      category,
+      isLiked,
+      isFollowing,
+    });
     this.state.likesCount = likes;
     this.state.likes = this.#formatCount(likes);
     this.state.followBtnText = isFollowing ? "✓" : "+";
