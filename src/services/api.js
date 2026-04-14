@@ -28,6 +28,15 @@ const VIDEOS = [
 let globalIdCounter = 0;
 
 /**
+ * Creates a VideoModel with consistent property order to maintain V8 Hidden Class stability.
+ * @param {VideoModel} data
+ * @returns {VideoModel}
+ */
+export function createVideoModel({ id, src, username, avatar, description, category, likes, isLiked, isFollowing }) {
+  return { id, src, username, avatar, description, category, likes, isLiked, isFollowing };
+}
+
+/**
  * Simulates a network fetch (~300 ms) and resolves with one batch of videos.
  * @returns {Promise<VideoModel[]>}
  */
@@ -36,7 +45,7 @@ export async function fetchVideos() {
     setTimeout(() => {
       const formattedVideos = VIDEOS.map((src) => {
         globalIdCounter++;
-        return {
+        return createVideoModel({
           id: `video_${globalIdCounter}`,
           src: src,
           username: `@creator_${globalIdCounter}`,
@@ -47,7 +56,7 @@ export async function fetchVideos() {
           likes: Math.floor(Math.random() * 100000),
           isLiked: false,
           isFollowing: false,
-        };
+        });
       });
       resolve(formattedVideos);
     }, 300);

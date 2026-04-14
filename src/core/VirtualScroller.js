@@ -32,13 +32,14 @@ export class VirtualScroller {
     this.pending = false;
     this.loading = false;
 
-    new ResizeObserver(([entry]) => {
+    this.resizeObserver = new ResizeObserver(([entry]) => {
       const h = entry.contentRect.height;
       if (h && h !== this.cachedHeight) {
         this.cachedHeight = h;
         requestAnimationFrame(() => this.refresh(true));
       }
-    }).observe(this.root);
+    });
+    this.resizeObserver.observe(this.root);
 
     this.playObserver = new IntersectionObserver(
       (entries) => {

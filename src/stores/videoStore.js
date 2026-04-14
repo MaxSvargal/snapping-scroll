@@ -1,5 +1,5 @@
 import { signal } from "../lib/signals.js";
-import { fetchVideos } from "../services/api.js";
+import { fetchVideos, createVideoModel } from "../services/api.js";
 
 /**
  * @typedef {Object} StoreAction
@@ -24,8 +24,12 @@ export async function loadMore() {
 
 /**
  * Dispatches an action (like, follow) and updates the reactive store.
- * @param {StoreAction} action
+ *
+ * @param {StoreAction} action - { type: 'TOGGLE_LIKE'|'TOGGLE_FOLLOW', id: videoId }
  * @returns {void}
+ * @example
+ * dispatch({ type: 'TOGGLE_LIKE', id: 'video_1' });
+ * // Finds video, captures new isLiked state, creates new object with correct likes count via factory
  */
 export function dispatch(action) {
   const i = videos.value.findIndex((v) => v.id === action.id);
@@ -35,12 +39,20 @@ export function dispatch(action) {
   const video = updated[i];
 
   switch (action.type) {
-    case "TOGGLE_LIKE":
-      video.isLiked = !video.isLiked;
-      video.likes += video.isLiked ? 1 : -1;
+    case "TOGGLE_LIKE": {
+      const nowLiked = !video.isLiked;
+      updated[i] = createVideoModel({
+        ...video,
+        isLiked: nowLiked,
+        likes: video.likes + (nowLiked ? 1 : -1),
+      });
       break;
+    }
     case "TOGGLE_FOLLOW":
-      video.isFollowing = !video.isFollowing;
+      updated[i] = createVideoModel({
+        ...video,
+        isFollowing: !video.isFollowing,
+      });
       break;
   }
 

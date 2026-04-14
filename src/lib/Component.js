@@ -19,11 +19,13 @@ import { effect } from "./signals.js";
  * @extends {HTMLElement}
  */
 export class Component extends HTMLElement {
+  state = {};
+  refs = {};
+  _abortController = null;
+
   constructor() {
     super();
     this.attachShadow({ mode: "open" });
-    this.state = {};
-    this.refs = {};
 
     if (this.constructor.styles) {
       const sheets = Array.isArray(this.constructor.styles)
@@ -191,29 +193,33 @@ export class Component extends HTMLElement {
 
       bindings.forEach((binding) => {
         const [type, key, extra] = binding.split(":");
+        const signalTarget = this.state[key];
+        if (!signalTarget) return;
 
-        // This is the Magic: We create an isolated, surgical effect for THIS specific node.
-        // If state[key] changes, ONLY this 3-line function runs.
-        effect(() => {
-          const signalTarget = this.state[key];
-          if (!signalTarget) return;
-
-          const val = signalTarget.value;
-
-          if (type === "text") {
-            if (el.textContent !== String(val)) el.textContent = val;
-          } else if (type === "class") {
-            el.classList.toggle(extra, !!val);
-          } else if (type === "attr") {
+        // Create specialized effect closure per binding type for TurboFan inlining
+        if (type === "text") {
+          effect(() => {
+            const val = String(signalTarget.value);
+            if (el.textContent !== val) el.textContent = val;
+          });
+        } else if (type === "class") {
+          effect(() => {
+            el.classList.toggle(extra, !!signalTarget.value);
+          });
+        } else if (type === "attr") {
+          effect(() => {
+            const val = signalTarget.value;
             if (typeof val === "boolean") {
               val ? el.setAttribute(extra, "") : el.removeAttribute(extra);
             } else {
               el.setAttribute(extra, val);
             }
-          } else if (type === "style") {
-            el.style[extra] = val;
-          }
-        });
+          });
+        } else if (type === "style") {
+          effect(() => {
+            el.style[extra] = signalTarget.value;
+          });
+        }
       });
     }
   }
