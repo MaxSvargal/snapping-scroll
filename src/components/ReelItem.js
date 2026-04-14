@@ -1,5 +1,5 @@
 import { Component, cssFrom, htmlFrom } from "../lib/Component.js";
-import { signal } from "../lib/signals.js";
+import { reactive } from "../lib/reactive.js";
 import { GestureDetector } from "../lib/GestureDetector.js";
 import { VideoProgress } from "../lib/VideoProgress.js";
 import reelItemCss from "./ReelItem.css?raw";
@@ -20,7 +20,6 @@ export class ReelItem extends Component {
 
   #isActive = false;
   #pendingData = null;
-  #_currentLikes = 0;
   #videoProgress = null;
 
   #gestureDetector = new GestureDetector(
@@ -29,22 +28,25 @@ export class ReelItem extends Component {
     DOUBLE_TAP_THRESHOLD_MS,
   );
 
-  state = {
-    username: signal(""),
-    avatar: signal(""),
-    description: signal(""),
-    category: signal(""),
-    likes: signal("0"),
-    isLiked: signal(false),
-    isFollowing: signal(false),
-    followBtnText: signal("+"),
-    progress: signal("0%"),
-    isDescExpanded: signal(false),
-    isHeartAnimating: signal(false),
-    heartLeft: signal("0px"),
-    heartTop: signal("0px"),
-    isLikeAnimating: signal(false),
-  };
+  state = reactive({
+    // mapped from model
+    username: "",
+    avatar: "",
+    description: "",
+    category: "",
+    likesCount: 0,      // raw number for arithmetic
+    likes: "0",         // formatted string for display
+    isLiked: false,
+    isFollowing: false,
+    // local UI
+    followBtnText: "+",
+    progress: "0%",
+    isDescExpanded: false,
+    isHeartAnimating: false,
+    heartLeft: "0px",
+    heartTop: "0px",
+    isLikeAnimating: false,
+  });
 
   onInit() {
     this.listenTo(document, "visibilitychange", () =>
@@ -52,7 +54,7 @@ export class ReelItem extends Component {
     );
 
     this.#videoProgress = new VideoProgress(this.refs.video, (percent) => {
-      this.state.progress.value = `${percent}%`;
+      this.state.progress = `${percent}%`;
     });
 
     if (this.#pendingData) {
@@ -72,44 +74,27 @@ export class ReelItem extends Component {
    * Assigns a video model. A new `id` triggers a full reload (src + all UI fields);
    * the same id patches only changed reactive fields (likes, isLiked, isFollowing).
    * Passing `null` pauses playback.
-   * @param {import('../services/api.js').VideoModel | null} model
+   * @param {import('../services/api.js').VideoModel | null} videoModel
    */
-  set data(model) {
+  set data(videoModel) {
     if (!this.refs.video) {
-      this.#pendingData = model ?? this.#pendingData;
+      this.#pendingData = videoModel ?? this.#pendingData;
       return;
     }
-
-    if (!model) {
-      this.#pause();
-      return;
-    }
-
-    const isNewItem = !this._id || this._id !== model.id;
-    if (isNewItem) {
-      this.#setItemData(model);
-    }
-
-    this.#updateState(model);
+    if (!videoModel) { this.#pause(); return; }
+    this.#applyModel(videoModel);
   }
 
-  #updateState(model) {
-    this.state.likes.value = this.#formatCount(model.likes);
-    this.state.isLiked.value = model.isLiked;
-    this.state.isFollowing.value = model.isFollowing;
-    this.state.followBtnText.value = this.state.isFollowing.value ? "✓" : "+";
-  }
+  #applyModel(videoModel) {
+    const { id, src, username, avatar, description, category, likes, isLiked, isFollowing } = videoModel;
+    this._id = id;
 
-  #setItemData(model) {
-    this._id = model.id;
-    this.#_currentLikes = model.likes;
+    Object.assign(this.state, { username, avatar, description, category, isLiked, isFollowing });
+    this.state.likesCount = likes;
+    this.state.likes = this.#formatCount(likes);
+    this.state.followBtnText = isFollowing ? "✓" : "+";
 
-    this.state.avatar.value = model.avatar;
-    this.state.username.value = model.username;
-    this.state.description.value = model.description;
-    this.state.category.value = model.category;
-
-    const newSrc = window.location.origin + `/${model.src}`;
+    const newSrc = `${window.location.origin}/${src}`;
     if (this.refs.video.src !== newSrc) {
       this.refs.video.pause();
       this.#videoProgress?.stop();
@@ -154,7 +139,7 @@ export class ReelItem extends Component {
 
   // Called by data-event="animationend:onHeartAnimationEnd" on .floating-heart
   onHeartAnimationEnd() {
-    this.state.isHeartAnimating.value = false;
+    this.state.isHeartAnimating = false;
   }
 
   // Called by data-event="canplay:onVideoCanPlay" on video
@@ -173,10 +158,10 @@ export class ReelItem extends Component {
   }
 
   #updateLikeState() {
-    const isNowLiked = !this.state.isLiked.value;
-    this.state.isLiked.value = isNowLiked;
-    this.#_currentLikes = (this.#_currentLikes || 0) + (isNowLiked ? 1 : -1);
-    this.state.likes.value = this.#formatCount(this.#_currentLikes);
+    const isNowLiked = !this.state.isLiked;
+    this.state.isLiked = isNowLiked;
+    this.state.likesCount += isNowLiked ? 1 : -1;
+    this.state.likes = this.#formatCount(this.state.likesCount);
     if (isNowLiked) this.#triggerLikeAnimation();
   }
 
@@ -187,8 +172,8 @@ export class ReelItem extends Component {
 
   toggleFollow(e) {
     e.stopPropagation();
-    this.state.isFollowing.value = !this.state.isFollowing.value;
-    this.state.followBtnText.value = this.state.isFollowing.value ? "✓" : "+";
+    this.state.isFollowing = !this.state.isFollowing;
+    this.state.followBtnText = this.state.isFollowing ? "✓" : "+";
     this.onAction?.({ type: "TOGGLE_FOLLOW", id: this._id });
   }
 
@@ -200,7 +185,7 @@ export class ReelItem extends Component {
   }
 
   toggleDescription() {
-    this.state.isDescExpanded.value = !this.state.isDescExpanded.value;
+    this.state.isDescExpanded = !this.state.isDescExpanded;
   }
 
   #handleDoubleTap(e) {
@@ -215,10 +200,10 @@ export class ReelItem extends Component {
   }
 
   #triggerLikeAnimation() {
-    this.state.isLikeAnimating.value = false;
+    this.state.isLikeAnimating = false;
     requestAnimationFrame(() =>
       requestAnimationFrame(() => {
-        this.state.isLikeAnimating.value = true;
+        this.state.isLikeAnimating = true;
       }),
     );
   }
@@ -229,11 +214,11 @@ export class ReelItem extends Component {
    * @param {number} y - viewport y coordinate of the tap
    */
   #showDoubleTapHeart(x, y) {
-    if (this.state.isHeartAnimating.value) return;
+    if (this.state.isHeartAnimating) return;
     const rect = this.getBoundingClientRect();
-    this.state.heartLeft.value = `${x - rect.left - 40}px`;
-    this.state.heartTop.value = `${y - rect.top - 40}px`;
-    this.state.isHeartAnimating.value = true;
+    this.state.heartLeft = `${x - rect.left - 40}px`;
+    this.state.heartTop = `${y - rect.top - 40}px`;
+    this.state.isHeartAnimating = true;
   }
 
   /**

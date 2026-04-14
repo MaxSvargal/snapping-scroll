@@ -1,4 +1,4 @@
-import { effect } from "./signals.js";
+import { effect } from "./reactive.js";
 
 /**
  * Base class for reactive web components with declarative DOM binding and event wiring.
@@ -169,15 +169,15 @@ export class Component extends HTMLElement {
 
   /**
    * @private
-   * Auto-syncs signal state to DOM via `data-bind` attributes.
+   * Auto-syncs reactive state to DOM via `data-bind` attributes.
    * Uses surgical effects so each binding only updates its specific node.
    * Called automatically after `_setupEvents()`.
    * Not called manually.
    * @example
    * <span data-bind="text:count" />
    * <button data-bind="class:active:isActive disabled:isDisabled" />
-   * // this.state.count.value = 5 → span.textContent = "5"
-   * // this.state.isActive.value = true → button.classList.add("active")
+   * // this.state.count = 5 → span.textContent = "5"
+   * // this.state.isActive = true → button.classList.add("active")
    */
   _mapBindings() {
     const walker = document.createTreeWalker(
@@ -196,10 +196,11 @@ export class Component extends HTMLElement {
 
       bindings.forEach((binding) => {
         const [type, key, extra] = binding.split(":");
-        const signalTarget = this.state[key];
-        if (!signalTarget) return;
+        const stateRef = this.state;
+        if (!stateRef || !(key in stateRef)) return;
 
-        this.#registerBinding(el, type, extra, signalTarget);
+        const target = { get value() { return stateRef[key]; } };
+        this.#registerBinding(el, type, extra, target);
       });
     }
   }

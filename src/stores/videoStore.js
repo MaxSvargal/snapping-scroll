@@ -1,5 +1,5 @@
-import { signal } from "../lib/signals.js";
-import { fetchVideos, createVideoModel } from "../services/api.js";
+import { reactive } from "../lib/reactive.js";
+import { fetchVideos } from "../services/api.js";
 
 /**
  * @typedef {Object} StoreAction
@@ -8,10 +8,11 @@ import { fetchVideos, createVideoModel } from "../services/api.js";
  */
 
 /**
- * Reactive signal holding the array of videos.
- * @type {ReturnType<typeof signal>}
+ * Reactive store holding videos.
+ * Uses reactive() proxy - enables direct property mutation without recreating objects.
+ * @type {{ videos: Array }}
  */
-export const videos = signal([]);
+export const videoStore = reactive({ videos: [] });
 
 /**
  * Fetches and appends new videos to the reactive store.
@@ -19,7 +20,7 @@ export const videos = signal([]);
  */
 export async function loadMore() {
   const newVideos = await fetchVideos();
-  videos.value = [...videos.value, ...newVideos];
+  videoStore.videos = [...videoStore.videos, ...newVideos];
 }
 
 /**
@@ -29,32 +30,21 @@ export async function loadMore() {
  * @returns {void}
  * @example
  * dispatch({ type: 'TOGGLE_LIKE', id: 'video_1' });
- * // Finds video, captures new isLiked state, creates new object with correct likes count via factory
+ * // Directly mutates the video object in place - no object recreation needed
  */
 export function dispatch(action) {
-  const i = videos.value.findIndex((v) => v.id === action.id);
-  if (i === -1) return;
-
-  const updated = [...videos.value];
-  const video = updated[i];
+  const video = videoStore.videos.find((v) => v.id === action.id);
+  if (!video) return;
 
   switch (action.type) {
     case "TOGGLE_LIKE": {
       const nowLiked = !video.isLiked;
-      updated[i] = createVideoModel({
-        ...video,
-        isLiked: nowLiked,
-        likes: video.likes + (nowLiked ? 1 : -1),
-      });
+      video.isLiked = nowLiked;
+      video.likes = video.likes + (nowLiked ? 1 : -1);
       break;
     }
     case "TOGGLE_FOLLOW":
-      updated[i] = createVideoModel({
-        ...video,
-        isFollowing: !video.isFollowing,
-      });
+      video.isFollowing = !video.isFollowing;
       break;
   }
-
-  videos.value = updated;
 }

@@ -1,8 +1,8 @@
 /** @module index Bootstraps the app: wires VideoStore → VirtualScroller → ReelItem. */
 import "./style.css";
 
-import { videos, loadMore, dispatch } from "./stores/videoStore.js";
-import { effect } from "./lib/signals.js";
+import { videoStore, loadMore, dispatch } from "./stores/videoStore.js";
+import { effect } from "./lib/reactive.js";
 import { VirtualScroller } from "./core/VirtualScroller.js";
 import { ReelItem } from "./components/ReelItem.js";
 
@@ -17,6 +17,6 @@ const scroller = new VirtualScroller({
   },
 });
 
-effect(() => scroller.update(videos.value));
+effect(() => scroller.update(videoStore.videos));
 
 loadMore();
