@@ -1,6 +1,15 @@
-<video class="reels-video" playsinline preload="auto" loop></video>
+<video
+  class="reels-video"
+  data-ref="video"
+  data-event="canplay:onVideoCanPlay pointerdown:onVideoPointerDown pointerup:onVideoPointerUp"
+  playsinline
+  preload="auto"
+  loop
+></video>
 <div
   class="floating-heart"
+  data-ref="floatingHeart"
+  data-event="animationend:onHeartAnimationEnd"
   data-bind="style:heartLeft:left style:heartTop:top class:isHeartAnimating:animate"
 >
   <svg

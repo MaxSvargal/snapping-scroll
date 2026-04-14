@@ -1,10 +1,11 @@
 import { Component, cssFrom, htmlFrom } from "../lib/Component.js";
 import { signal } from "../lib/signals.js";
+import { GestureDetector } from "../lib/GestureDetector.js";
+import { VideoProgress } from "../lib/VideoProgress.js";
 import reelItemCss from "./ReelItem.css?raw";
 import reelItemHtml from "./ReelItem.html?raw";
 
 const DOUBLE_TAP_THRESHOLD_MS = 300;
-const PROGRESS_THRESHOLD = 0.5;
 
 /**
  * Custom element for a single video card in the reel feed.
@@ -17,47 +18,42 @@ export class ReelItem extends Component {
   static styles = cssFrom(reelItemCss);
   static template = htmlFrom(reelItemHtml);
 
-  #rVFCId = null;
   #isActive = false;
-  #lastTap = 0;
   #pendingData = null;
-  #tapTimeout = null;
-  #timeUpdateListener = null;
   #_currentLikes = 0;
+  #videoProgress = null;
 
-  constructor() {
-    super();
-    this._onVisibilityChange = () => this.#handleVisibilityChange();
-  }
+  #gestureDetector = new GestureDetector(
+    () => this.#handleSingleTap(),
+    (e) => this.#handleDoubleTap(e),
+    DOUBLE_TAP_THRESHOLD_MS,
+  );
+
+  state = {
+    username: signal(""),
+    avatar: signal(""),
+    description: signal(""),
+    category: signal(""),
+    likes: signal("0"),
+    isLiked: signal(false),
+    isFollowing: signal(false),
+    followBtnText: signal("+"),
+    progress: signal("0%"),
+    isDescExpanded: signal(false),
+    isHeartAnimating: signal(false),
+    heartLeft: signal("0px"),
+    heartTop: signal("0px"),
+    isLikeAnimating: signal(false),
+  };
 
   onInit() {
-    this.state = {
-      username: signal(""),
-      avatar: signal(""),
-      description: signal(""),
-      category: signal(""),
-      likes: signal("0"),
-      isLiked: signal(false),
-      isFollowing: signal(false),
-      followBtnText: signal("+"),
-      progress: signal("0%"),
-      isDescExpanded: signal(false),
-      isHeartAnimating: signal(false),
-      heartLeft: signal("0px"),
-      heartTop: signal("0px"),
-      isLikeAnimating: signal(false),
-    };
+    this.listenTo(document, "visibilitychange", () =>
+      this.#handleVisibilityChange(),
+    );
 
-    this.video = this.shadowRoot.querySelector(".reels-video");
-
-    this.shadowRoot
-      .querySelector(".floating-heart")
-      .addEventListener("animationend", () => {
-        this.state.isHeartAnimating.value = false;
-      });
-
-    document.addEventListener("visibilitychange", this._onVisibilityChange);
-    this.#bindEvents();
+    this.#videoProgress = new VideoProgress(this.refs.video, (percent) => {
+      this.state.progress.value = `${percent}%`;
+    });
 
     if (this.#pendingData) {
       const pending = this.#pendingData;
@@ -66,9 +62,9 @@ export class ReelItem extends Component {
     }
   }
 
-  disconnectedCallback() {
-    document.removeEventListener("visibilitychange", this._onVisibilityChange);
-    clearTimeout(this.#tapTimeout);
+  onDisconnect() {
+    this.#gestureDetector?.cleanup();
+    this.#videoProgress?.cleanup();
     this.#pause();
   }
 
@@ -79,7 +75,7 @@ export class ReelItem extends Component {
    * @param {import('../services/api.js').VideoModel | null} model
    */
   set data(model) {
-    if (!this.video) {
+    if (!this.refs.video) {
       if (model) this.#pendingData = model;
       return;
     }
@@ -114,12 +110,12 @@ export class ReelItem extends Component {
     this.state.category.value = model.category;
 
     const newSrc = window.location.origin + `/${model.src}`;
-    if (this.video.src !== newSrc) {
-      this.video.pause();
-      this.#stopProgressLoop();
-      this.video.removeAttribute("src");
-      this.video.load();
-      this.video.src = newSrc;
+    if (this.refs.video.src !== newSrc) {
+      this.refs.video.pause();
+      this.#videoProgress?.stop();
+      this.refs.video.removeAttribute("src");
+      this.refs.video.load();
+      this.refs.video.src = newSrc;
     }
   }
 
@@ -135,103 +131,45 @@ export class ReelItem extends Component {
   }
 
   #play() {
-    if (!this.video || this.video.readyState < 2) return;
-    const playPromise = this.video.play();
+    if (!this.refs.video || this.refs.video.readyState < 2) return;
+    const playPromise = this.refs.video.play();
     if (playPromise !== undefined) {
       playPromise.catch(() => {
-        this.video.muted = true;
-        this.video.play().catch(() => {});
+        this.refs.video.muted = true;
+        this.refs.video.play().catch(() => {});
       });
     }
-    this.#startProgressLoop();
+    this.#videoProgress?.start();
   }
 
   #pause() {
-    this.video?.pause();
-    this.#stopProgressLoop();
+    this.refs.video?.pause();
+    this.#videoProgress?.stop();
   }
 
   #handleVisibilityChange() {
-    if (document.hidden) this.#stopProgressLoop();
-    else if (this.#isActive) this.#startProgressLoop();
+    if (document.hidden) this.#videoProgress?.stop();
+    else if (this.#isActive) this.#videoProgress?.start();
   }
 
-  #startProgressLoop() {
-    this.#stopProgressLoop();
-
-    if (
-      this.video &&
-      typeof this.video.requestVideoFrameCallback === "function"
-    ) {
-      let lastProgress = 0;
-      const frame = (_now, meta) => {
-        if (!this.video.duration) {
-          this.#rVFCId = this.video.requestVideoFrameCallback(frame);
-          return;
-        }
-
-        const progress = (meta.mediaTime / this.video.duration) * 100;
-        if (Math.abs(progress - lastProgress) > PROGRESS_THRESHOLD) {
-          this.state.progress.value = `${progress}%`;
-          lastProgress = progress;
-        }
-        this.#rVFCId = this.video.requestVideoFrameCallback(frame);
-      };
-      this.#rVFCId = this.video.requestVideoFrameCallback(frame);
-    } else {
-      this.#timeUpdateListener = () => {
-        if (!this.video.duration) return;
-        const progress = (this.video.currentTime / this.video.duration) * 100;
-        this.state.progress.value = `${progress}%`;
-      };
-      this.video?.addEventListener("timeupdate", this.#timeUpdateListener);
-    }
+  // Called by data-event="animationend:onHeartAnimationEnd" on .floating-heart
+  onHeartAnimationEnd() {
+    this.state.isHeartAnimating.value = false;
   }
 
-  #stopProgressLoop() {
-    if (this.#rVFCId) {
-      this.video?.cancelVideoFrameCallback(this.#rVFCId);
-      this.#rVFCId = null;
-    }
-    if (this.#timeUpdateListener) {
-      this.video?.removeEventListener("timeupdate", this.#timeUpdateListener);
-      this.#timeUpdateListener = null;
-    }
+  // Called by data-event="canplay:onVideoCanPlay" on video
+  onVideoCanPlay() {
+    if (this.#isActive) this.#play();
   }
 
-  #bindEvents() {
-    this.#setupVideoLifecycleEvents();
-    this.#setupGestureHandling();
+  // Called by data-event="pointerdown:onVideoPointerDown" on video
+  onVideoPointerDown(e) {
+    this.#gestureDetector?.handlePointerDown(e);
   }
 
-  #setupVideoLifecycleEvents() {
-    this.video?.addEventListener("canplay", () => {
-      if (this.#isActive) this.#play();
-    });
-  }
-
-  #setupGestureHandling() {
-    this.video?.addEventListener("pointerdown", (e) => {
-      const tapLength = performance.now() - this.#lastTap;
-      if (tapLength < DOUBLE_TAP_THRESHOLD_MS && tapLength > 0) {
-        e.preventDefault();
-      }
-    });
-
-    this.video?.addEventListener("pointerup", (e) => {
-      const tapLength = performance.now() - this.#lastTap;
-      if (tapLength < DOUBLE_TAP_THRESHOLD_MS && tapLength > 0) {
-        clearTimeout(this.#tapTimeout);
-        this.#handleDoubleTap(e);
-      } else {
-        clearTimeout(this.#tapTimeout);
-        this.#tapTimeout = setTimeout(
-          () => this.#handleSingleTap(),
-          DOUBLE_TAP_THRESHOLD_MS,
-        );
-      }
-      this.#lastTap = performance.now();
-    });
+  // Called by data-event="pointerup:onVideoPointerUp" on video
+  onVideoPointerUp(e) {
+    this.#gestureDetector?.handlePointerUp(e);
   }
 
   #updateLikeState() {
@@ -257,8 +195,8 @@ export class ReelItem extends Component {
   seekVideo(e, target) {
     const rect = target.getBoundingClientRect();
     const pos = (e.clientX - rect.left) / rect.width;
-    if (this.video?.duration)
-      this.video.currentTime = pos * this.video.duration;
+    if (this.refs.video?.duration)
+      this.refs.video.currentTime = pos * this.refs.video.duration;
   }
 
   toggleDescription() {
@@ -273,7 +211,7 @@ export class ReelItem extends Component {
   }
 
   #handleSingleTap() {
-    this.video.paused ? this.#play() : this.#pause();
+    this.refs.video.paused ? this.#play() : this.#pause();
   }
 
   #triggerLikeAnimation() {
