@@ -16,7 +16,13 @@ function flushQueue() {
   const fns = [...queue];
   queue.clear();
   pending = false;
-  fns.forEach((fn) => fn());
+  for (const fn of fns) {
+    try {
+      fn();
+    } catch (e) {
+      console.error(e);
+    }
+  }
 }
 
 export function effect(fn) {
@@ -31,6 +37,10 @@ export function effect(fn) {
   activeEffect = wrapper;
   fn();
   activeEffect = null;
+
+  return () => {
+    queue.delete(fn);
+  };
 }
 
 /**

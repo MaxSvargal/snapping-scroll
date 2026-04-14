@@ -8,6 +8,7 @@ export class VideoProgress {
   #threshold;
   #rVFCId = null;
   #timeUpdateListener = null;
+  #running = false;
 
   /**
    * @param {HTMLVideoElement} video - the video element to track
@@ -25,6 +26,7 @@ export class VideoProgress {
    */
   start() {
     this.stop();
+    this.#running = true;
 
     if (
       this.#video &&
@@ -40,6 +42,8 @@ export class VideoProgress {
    * Stop tracking video progress
    */
   stop() {
+    this.#running = false;
+
     if (this.#rVFCId) {
       this.#video?.cancelVideoFrameCallback(this.#rVFCId);
       this.#rVFCId = null;
@@ -54,6 +58,8 @@ export class VideoProgress {
   #startWithFrameCallback() {
     let lastProgress = 0;
     const frame = (_now, meta) => {
+      if (!this.#running) return;
+
       if (!this.#video.duration) {
         this.#rVFCId = this.#video.requestVideoFrameCallback(frame);
         return;

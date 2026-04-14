@@ -22,6 +22,7 @@ export class Component extends HTMLElement {
   state = {};
   refs = {};
   _abortController = null;
+  #_disposeEffects = [];
 
   constructor() {
     super();
@@ -51,6 +52,8 @@ export class Component extends HTMLElement {
   }
 
   disconnectedCallback() {
+    this.#_disposeEffects.forEach((fn) => fn?.());
+    this.#_disposeEffects = [];
     this.onDisconnect?.();
     this._abortController?.abort();
   }
@@ -196,32 +199,47 @@ export class Component extends HTMLElement {
         const signalTarget = this.state[key];
         if (!signalTarget) return;
 
-        // Create specialized effect closure per binding type for TurboFan inlining
-        if (type === "text") {
-          effect(() => {
-            const val = String(signalTarget.value);
-            if (el.textContent !== val) el.textContent = val;
-          });
-        } else if (type === "class") {
-          effect(() => {
-            el.classList.toggle(extra, !!signalTarget.value);
-          });
-        } else if (type === "attr") {
-          effect(() => {
-            const val = signalTarget.value;
-            if (typeof val === "boolean") {
-              val ? el.setAttribute(extra, "") : el.removeAttribute(extra);
-            } else {
-              el.setAttribute(extra, val);
-            }
-          });
-        } else if (type === "style") {
-          effect(() => {
-            el.style[extra] = signalTarget.value;
-          });
-        }
+        this.#registerBinding(el, type, extra, signalTarget);
       });
     }
+  }
+
+  /**
+   * @private
+   * Creates an effect for a single DOM binding and registers its dispose function.
+   * @param {HTMLElement} el
+   * @param {string} type - "text" | "class" | "attr" | "style"
+   * @param {string|undefined} extra - class name, attribute name, or style property
+   * @param {Signal} signalTarget
+   */
+  #registerBinding(el, type, extra, signalTarget) {
+    const handlers = {
+      text: () =>
+        effect(() => {
+          const val = String(signalTarget.value);
+          if (el.textContent !== val) el.textContent = val;
+        }),
+      class: () =>
+        effect(() => {
+          el.classList.toggle(extra, !!signalTarget.value);
+        }),
+      attr: () =>
+        effect(() => {
+          const val = signalTarget.value;
+          if (typeof val === "boolean") {
+            val ? el.setAttribute(extra, "") : el.removeAttribute(extra);
+          } else {
+            el.setAttribute(extra, val);
+          }
+        }),
+      style: () =>
+        effect(() => {
+          el.style[extra] = signalTarget.value;
+        }),
+    };
+
+    const dispose = handlers[type]?.();
+    if (dispose) this.#_disposeEffects.push(dispose);
   }
 }
 

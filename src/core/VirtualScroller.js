@@ -139,4 +139,18 @@ export class VirtualScroller {
     this.playObserver.unobserve(el);
     this.elements.delete(i);
   }
+
+  /**
+   * Cleans up all observers and mounted elements.
+   * Call when the scroller is no longer needed (e.g., SPA navigation).
+   * @returns {void}
+   */
+  destroy() {
+    this.resizeObserver.disconnect();
+    this.playObserver.disconnect();
+    for (const el of this.elements.values()) {
+      el.remove();
+    }
+    this.elements.clear();
+  }
 }

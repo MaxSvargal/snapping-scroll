@@ -76,7 +76,7 @@ export class ReelItem extends Component {
    */
   set data(model) {
     if (!this.refs.video) {
-      if (model) this.#pendingData = model;
+      this.#pendingData = model ?? this.#pendingData;
       return;
     }
 
